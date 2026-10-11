@@ -1,0 +1,15 @@
+{
+  "status": "PARTIAL_USER_OBSERVED_NOT_LIVE_VALIDATED",
+  "source_title": "ĐỐI CHIẾU KL- KẾ TOÁN IJC",
+  "candidate_conversation_dom_id": "g3144426084883145716",
+  "observed_selectors": {
+    "conversation_rows": "[data-id='div_TabMsg_ThrdChItem']",
+    "conversation_dom_identity_attribute": "anim-data-id",
+    "conversation_title": ".conv-item-title__name .truncate",
+    "selected_conversation": ".conv-item.selected",
+    "received_text_container": "[data-id='div_ReceivedMsg_Text']",
+    "message_text": "[data-component='message-text-content'] .text"
+  },
+  "unverified": ["identity_stability", "active_header", "message_root", "sender", "timestamp", "image_attachment", "file_attachment", "download_control", "security_challenge", "scroll_coverage"],
+  "notes": "These observations do not satisfy the original adapter contract. Do not fabricate data-conversation-id/data-message-id attributes. Normalize whitespace including NBSP for title comparison; preserve original evidence. Do not infer business delivery dates from DOM identifiers. No live capture authorized by this profile alone."
+}
