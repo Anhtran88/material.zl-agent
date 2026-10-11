@@ -1,0 +1,52 @@
+# Zalo Material Delivery Manager — Architecture
+
+Status: design baseline; only Milestone 1 implementation is authorized here. Live Zalo acceptance remains pending. Accuracy > traceability > integrity > automation > speed.
+
+## Requirements and risks
+Zalo is a read-only source restricted to a user-maintained Allow List. Timeline is primary; media library is recovery only. No send, reply, react, forward, edit, delete, recall or upload capability is exposed. Manual login is required; QR, CAPTCHA, logout, verification and ambiguous UI stop automation. Opening a conversation may mark messages read in Zalo; this is a platform side effect that must be disclosed during live acceptance. We cannot claim zero server writes merely from a read-only application API.
+
+Zalo has no verified stable DOM contract in this environment. Virtualized timelines can hide messages, timestamps can be incomplete, IDs may be unstable, and expiring attachment URLs require the existing session. Selectors must be captured and verified locally; invented selectors must never be treated as production-ready. Require a uniquely matched conversation ID and exact title, then recheck identity on every read/download. Duplicate names, missing metadata, unsupported attachment types and coverage uncertainty stop rather than silently skip. Headed Playwright persistent profile is local, outside OneDrive, treated as a credential with Windows user ACLs; never export it or log cookies. No injected request blocking based solely on HTTP method: Zalo reading itself may require POST. Adapter interaction allowlisting and live network audit provide the controls, with limitations recorded.
+
+## Components and folders
+Python agent + Playwright adapter; later FastAPI loopback API, React/TypeScript UI, SQLAlchemy/Alembic SQLite persistence. Separate ports: ZaloAdapter, OCRProvider, AIProvider/AIModelRouter, FileStore. Deterministic parsers precede OCR/AI. Configurable OpenAI-compatible 9Router gateway only after real API compatibility verification. Secrets via Windows Credential Manager. No frontend keys.
+
+```
+src/material_agent/  models, adapter, poc runner (M1)
+config/              selector contract example
+schemas/             database design, not active production migration
+ tests/              unit, adapter contract, later browser fixtures
+ docs/               acceptance and operational guides
+```
+
+Future packages: bundle, duplicate, jobs, extraction, validation, pdf, storage, reports, api; frontend separately. Local root `%LOCALAPPDATA%/ZaloMaterialAgent`: data/app.db, cache/{JobID}, browser-profile, logs. OneDrive contains only final PDFs, original archive, reports and consistent SQLite backup API copies; never an active DB/cache/profile.
+
+## Database schema
+See schemas/schema.sql for the relational blueprint, all required entities and constraints. UUID internal IDs; UTC timestamps plus original local text/timezone; decimals stored as decimal strings, calculated with Decimal. Sources are immutable. BundleID stays fixed across revisions; immutable version membership and fingerprints prevent edits destroying audit history. Message ID uniqueness is scoped to conversation; attachment identity scoped to source; binary hash global, but evidence associations retained. Unstable fingerprints are candidate duplicate signals when timestamps/senders cannot be established, not proof permitting data loss. Nullable unknowns remain unknown.
+
+## Agent state machine
+IDLE -> OPENING -> WAITING_LOGIN -> READY -> RESOLVING_SOURCE -> READING -> GROUPING -> DOWNLOADING -> HASHING -> EXTRACTING -> CROSS_CHECKING -> VALIDATING -> BUILDING_PDF -> PREPARED -> COMMITTING -> PUBLISHING -> CHECKPOINTING -> ARCHIVING -> CLEANING -> COMPLETED.
+Any step may enter PAUSED_USER (login/security/uncertainty), NEEDS_REVIEW (business conflict), RETRY_WAIT (transient error), FAILED (exhausted retries) or CANCELLED. M1 stops after READING/DOWNLOADING and logs evidence; no business completion/checkpoint. Persistent jobs later have attempt count, next retry, lease expiry, owner and state version; compare-and-swap transitions, bounded exponential retry with jitter. Expired leases recover by inspecting durable artifacts, not replaying side effects blindly.
+
+## Delivery Bundle Engine (M2)
+Read overlapping bounded chronological windows from one conversation, retaining ordering, sender, IDs, timestamps, text and attachment metadata. Generate candidates in both temporal directions; attachment-before-description, description-before-attachment and follow-up supported. A time window alone never proves membership. Hard reject cross-conversation candidates; incompatible explicit slip/project/date signals require review. Score independent available evidence: sender, proximity/order, material, project/location, supplier, document number, quantities, OCR content. Record each contribution, missing evidence, model/ruleset version and candidate alternatives. Initial metadata scoring precedes selective download; OCR then refines without allowing an uncertain merge to silently become committed.
+
+Defaults >=.90 eligible for auto-processing, .70–.89 process provisionally with warning/review, <.70 review without accounting. Thresholds configurable and calibrated on labeled test data; heuristic score is not a statistical probability. Weak temporal-only evidence has a confidence cap below auto threshold. Competing candidates or hard conflicts always override the score. Human split/merge/approval creates audited revisions. Late attachments update the existing bundle revision when supported by evidence; no new accounting event by default.
+
+## Five duplicate layers
+1. Source message ID, else versioned canonical fingerprint (conversation, exact normalized Unicode text, stable sender/time and attachment identity). Preserve raw values. Ambiguous identical messages retained for review.
+2. Source attachment identity and association, never filename.
+3. SHA-256 binary identity with immutable FileRecord; reuse bytes but keep every provenance link.
+4. Bundle revision fingerprint of sorted stable evidence IDs and content hashes; late evidence changes revision, not BundleID.
+5. Business candidate key: document number/date/project/supplier/material/unit/quantities. Different photos can share business identity. POSSIBLE_DUPLICATE blocks automatic accounting until reviewed; a match alone is not proof.
+
+## Checkpoint and resume (M3)
+Separate scanned cursor from finalized cursor. Capture raw evidence atomically before moving scanned cursor. Final cursor only reaches the highest contiguous safely terminal segment (committed/published evidence or explicitly audited non-delivery decision); review, failed download and unresolved holes block it. Processed membership tables track messages, attachments and bundle revisions. Resume jobs first, then scan bounded overlap by stable cursor/time plus seen IDs. Timestamp alone cannot define ordering. No stable cursor or uncertain virtualized coverage => pause/backfill explicitly; never claim complete history. Out-of-order/late events trigger periodic bounded lookback with duplicate checks; edits require evidence revision and review.
+
+## Validation and evidence
+Keep separate message_timestamp, chat_stated_date, delivery_note_date, weighing_note_date, document_date and confirmed_delivery_date; every extracted date links evidence. Conflict => DATE_CONFLICT/review, never choose message date. Separate requested/ordered/delivered/received/accepted/returned amounts, unit and document role. Preserve original strings, parse Vietnamese separators explicitly, reject ambiguity. Decimal arithmetic calculates deltas, including unit validation; no LLM arithmetic. Each important field links document/page/location or message span, method and confidence. Validate dates, project, material, slip, supplier, units, missing evidence and duplicate against chat/documents/DB. Reports include only verified current accounting revision. Null is not zero.
+
+## Transaction boundary and publication saga
+SQLite cannot atomically commit with filesystem/OneDrive. Generate PDF and originals in local staging; verify readability, page manifest and hashes first. Transaction records PREPARED revision, evidence, validation and outbox publication intent; it does not activate report accounting. Publish to reserved relative paths without overwrite (exclusive creation + recoverable hash check); verify final PDF and archive bytes. A second DB transaction activates exactly one verified delivery revision and records durable publication. Reports derive from that revision; checkpoint advances only once report/outbox requirements and evidence retention are safe. Recovery reconciles outbox and hashes; crash between publish/commit reuses matching bytes, conflicts pause. Failed archives block cleanup and final checkpoint. This deliberately tightens the prompt's ordering where archiving after checkpoint would endanger evidence. Cache retention after failures is configurable; cleanup only after durable evidence and transaction completion. Reserve names per storage root; use confirmed date only, normalized material/project names and safe relative paths, never overwrite. SQLite backup API supplies consistent snapshots.
+
+## Test strategy
+M1 contract tests plus a real headed-browser dataset under an explicit Allow List. Include duplicate group titles, identity changes, security challenge, missing/changed selector, mixed image/PDF/Word/Excel attachments, download timeout and corrupt bytes. Compare expected message/attachment counts and SHA-256 manifest. Static absence of forbidden methods is supplementary, not proof of live read-only behavior. Audit every permitted interaction; inspect browser/network activity locally without exporting credentials. Later milestones test all prompt scenarios: grouping in both directions, late attachments, replay/restart, different-photo business duplicate, conflicting dates, Decimal deltas, evidence clicks, valid PDFs, collision-safe filenames, outbox crash injection and OneDrive failure. Gate each milestone with a recorded acceptance report; no next milestone while required evidence is missing.
