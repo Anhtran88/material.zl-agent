@@ -46,3 +46,6 @@ Current Local Agent no longer auto-writes capture JSON or operation logs and its
 
 ## Firebase project identified — 2026-10-11
 User screenshot confirms MaterialZlAgent (materialzlagent, project number 939657441007). firebase/.firebaserc now selects this project. This supersedes earlier no-project setup status, but does not establish Firestore/location, Auth, Storage, authenticated deployment or actual cloud ingestion. Cloud acceptance gates remain pending.
+
+## Firestore rule override — 2026-10-11
+User explicitly requested unrestricted, non-expiring Firestore rules. Committed allow read/write if true, including unauthenticated clients; no deployment performed. This supersedes the earlier deny-all Firestore scaffold for the current requested configuration. Tenant isolation/security acceptance gates remain unmet; unrestricted access is not proof of cloud readiness. Storage policy was not changed.
