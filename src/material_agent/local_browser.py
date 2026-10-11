@@ -37,24 +37,42 @@ DOM_PROBE = r'''({source, operation}) => {
       class:c.getAttribute('class'),dataId:c.getAttribute('data-id'),component:c.getAttribute('data-component')}))});
   const ancestors = n => {
     const out=[];
-    for(let i=0;i<8 && n && n!==document.body;i++,n=n.parentElement) out.push(describe(n));
+    for(let i=0;i<16 && n && n!==document.body;i++,n=n.parentElement) { out.push(describe(n)); if (n.matches('[data-component="bubble-message"]')) break; }
     return out;
   };
   if (operation === 'structure') return {...base,
     textStructures:texts.slice(0,5).map(ancestors),imageStructures:images.slice(0,5).map(ancestors)};
   if (operation !== 'read_visible') throw new Error('Unsupported operation');
+  // These are current DOM labels and opaque identities, not stable server IDs.
+  const context = n => {
+    const bubble = n.closest('[data-component="bubble-message"]');
+    const frame = n.closest('[data-component="message-content-view"]');
+    const label = selector => {
+      if (!frame || !bubble) return null;
+      const nodes = [...frame.querySelectorAll(selector)].filter(c =>
+        visible(c) && c.closest('[data-component="message-content-view"]') === frame &&
+        !c.closest('.message-quote-fragment__container'));
+      if (nodes.length !== 1) return null;
+      const value = normalize(nodes[0].textContent || '');
+      return value && value.length <= 500 ? value : null;
+    };
+    return {candidateBubbleId:bubble?.id || null,candidateFrameId:frame?.id || null,
+      senderDisplayLabel:label('.message-sender-name-wrapper'),
+      messageTimeDisplayLabel:label('.card-send-time')};
+  };
   const messages = texts.slice(0,200).map(n => {
     const text = [...n.querySelectorAll('[data-component="message-text-content"] .text')]
+      .filter(c=>!c.closest('.message-quote-fragment__container'))
       .map(c=>c.textContent || '').join('\n');
-    return {domContainerId:n.id,text:text.slice(0,20000),textTruncated:text.length>20000,
+    return {...context(n),domContainerId:n.id,text:text.slice(0,20000),textTruncated:text.length>20000,
       stableMessageId:null,sender:null,messageTimestamp:null};
   });
-  const attachments = images.slice(0,200).map(n=>({domContainerId:n.id,kind:'image',
+  const attachments = images.slice(0,200).map(n=>({...context(n),domContainerId:n.id,kind:'image',
     images:[...n.querySelectorAll('img[data-z-element-type="image"]')].map(img=>({
       domImageId:img.id,width:img.naturalWidth,height:img.naturalHeight,
       loaded:img.complete && img.naturalWidth>0,originalBytesDownloaded:false}))}));
   return {...base,messages,attachments,truncated:texts.length>200 || images.length>200,
-    warning:'Unknown sender/time and unverified container associations. Not business evidence acceptance.'};
+    warning:'Display labels and DOM identities only; no inferred sender, parsed timestamp or original image. Not business evidence acceptance.'};
 }'''
 
 

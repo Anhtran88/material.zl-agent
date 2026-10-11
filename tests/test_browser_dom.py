@@ -32,6 +32,38 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         result=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'structure'})
         import json
         self.assertNotIn('Sample allowed message',json.dumps(result)); self.assertNotIn('data:image',json.dumps(result))
+    async def test_observed_bubble_labels_and_quote_exclusion(self):
+        await self.page.evaluate("""() => {
+          const n=document.querySelector('[id^="text-mCntr_"]');
+          const bubble=document.createElement('div');
+          bubble.id='bb_msg_id_opaque';bubble.dataset.component='bubble-message';
+          const frame=document.createElement('div');
+          frame.id='message-frame_opaque';frame.dataset.component='message-content-view';
+          n.before(bubble);bubble.append(frame);frame.append(n);
+          const sender=document.createElement('div');sender.className='message-sender-name-wrapper';
+          sender.textContent='Sample sender';frame.append(sender);
+          const time=document.createElement('div');time.className='card-send-time';
+          time.textContent='08:44';frame.append(time);
+          const quote=document.createElement('div');quote.className='message-quote-fragment__container';
+          quote.innerHTML='<div data-component="message-text-content"><span class="text">Quoted content</span></div>';
+          n.prepend(quote);
+        }""")
+        r=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_visible'})
+        m=r['messages'][0]
+        self.assertEqual(m['text'],'Sample allowed message')
+        self.assertEqual(m['candidateBubbleId'],'bb_msg_id_opaque')
+        self.assertEqual(m['senderDisplayLabel'],'Sample sender')
+        self.assertEqual(m['messageTimeDisplayLabel'],'08:44')
+        self.assertIsNone(m['sender']);self.assertIsNone(m['messageTimestamp'])
+        self.assertIsNone(r['attachments'][0]['senderDisplayLabel'])
+        structure=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'structure'})
+        self.assertEqual(structure['textStructures'][0][-1]['attributes']['data-component'],'bubble-message')
+    async def test_missing_labels_stay_unknown(self):
+        r=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_visible'})
+        for record in r['messages']+r['attachments']:
+            self.assertIsNone(record['senderDisplayLabel'])
+            self.assertIsNone(record['messageTimeDisplayLabel'])
+            self.assertIsNone(record['candidateBubbleId'])
     async def test_duplicate_title_blocks(self):
         await self.page.evaluate("document.querySelector('#conversationList').appendChild(document.querySelector('[anim-data-id]').cloneNode(true))")
         with self.assertRaises(Exception): await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'verify'})
