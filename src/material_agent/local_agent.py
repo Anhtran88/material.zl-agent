@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
-from .firestore_capture import FirestoreCaptureStore
+from .firestore_capture import FirestoreCaptureStore, CloudStorageError
 from .local_browser import LocalBrowser
 from .login import profile_path
 from .models import StopAutomation
@@ -73,6 +73,10 @@ class Controller:
                 result={**result,'cloudStorage':receipt}
                 self.audit(operation,'OK')
                 return result
+            except CloudStorageError as exc:
+                self.enabled=False
+                self.audit(operation,exc.code)
+                raise StopAutomation(str(exc)) from None
             except Exception:
                 self.enabled=False
                 self.audit(operation,'PAUSED_USER')
@@ -175,6 +179,18 @@ def create_app(token, controller=None, port=8765, clock=None):
 
     @app.post('/api/read-visible')
     async def read_visible(): return await controller.action('read_visible')
+
+    @app.post('/api/local/cloud-test')
+    async def cloud_test(request:Request):
+        local_only(request)
+        async with controller.lock:
+            try:
+                receipt=await controller.capture_store.save(
+                    {'kind':'CONNECTIVITY_TEST','containsZaloContent':False},
+                    operation='structure',session_id=controller.session_id)
+                return {'cloudStorage':receipt,'kind':'CONNECTIVITY_TEST','containsZaloContent':False}
+            except CloudStorageError as exc:
+                raise StopAutomation(str(exc)) from None
 
     @app.post('/api/local/mcp-config')
     async def mcp_config(request:Request):

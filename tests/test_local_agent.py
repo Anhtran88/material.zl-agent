@@ -42,6 +42,23 @@ class LocalAgentTests(unittest.TestCase):
         self.local={**self.auth,'Origin':'http://127.0.0.1:8765'}
     def tearDown(self): self.client.close(); self.tmp.cleanup()
     def connect(self): self.assertEqual(self.client.post('/api/local/connect',headers=self.local).status_code,200)
+    def test_cloud_probe_is_local_and_does_not_need_or_read_zalo(self):
+        self.assertEqual(self.client.post('/api/local/cloud-test',headers=self.auth).status_code,403)
+        response=self.client.post('/api/local/cloud-test',headers=self.local)
+        self.assertTrue(response.json()['cloudStorage']['saved'])
+        self.assertFalse(response.json()['containsZaloContent'])
+        self.assertFalse(self.browser.calls)
+    def test_cloud_failure_has_diagnostic_and_no_local_fallback(self):
+        from material_agent.firestore_capture import CloudStorageError
+        class Failure:
+            async def save(self,*args,**kwargs):raise CloudStorageError('PERMISSION_DENIED')
+        self.connect();self.controller.capture_store=Failure()
+        response=self.client.post('/api/read-visible',headers=self.auth)
+        self.assertEqual(response.status_code,409)
+        self.assertIn('PERMISSION_DENIED',response.json()['detail'])
+        self.assertFalse(self.controller.enabled)
+        self.assertFalse(self.controller.status()['business_data_persisted'])
+        self.assertFalse((Path(self.tmp.name)/'cache').exists())
     def test_mcp_config_is_local_and_contains_no_token(self):
         self.assertEqual(self.client.post('/api/local/mcp-config',headers=self.auth).status_code,403)
         response=self.client.post('/api/local/mcp-config',headers=self.local)

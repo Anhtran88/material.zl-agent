@@ -52,3 +52,6 @@ User explicitly requested unrestricted, non-expiring Firestore rules. Committed 
 
 ## RAW Firestore connection implementation — 2026-10-11
 Added fixed-project REST RAW capture commits for materialzlagent using the user's public Firebase client config and requested public rules. One bounded immutable capture per read/structure operation, server receipt time, create-only retry/readback, no local fallback, explicit verified cloud receipt. This replaces memory-preview-only behavior on updated Windows installs. 67/67 automated tests passed; actual environment Firestore probe blocked by proxy 403, so real cloud save pending Windows verification. Authenticated ingestion, chunking, tenant isolation, multi-device state leases and Storage uploads remain gated cloud-foundation work; this interim prototype is not the full schema/services implementation.
+
+## Cloud write observation — 2026-10-11
+User Firebase Console screenshot shows three documents in captures and user confirms save works. RAW cloud writes have user-observed live evidence; content/receipt matching remains uninspected. Visible cloud status and local-only no-Zalo connectivity-test write added, with safe error diagnostics; 70/70 automated tests pass. Full authenticated cloud foundation and M2 business processing remain unimplemented.

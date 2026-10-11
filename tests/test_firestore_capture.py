@@ -29,5 +29,11 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):await store.save({},operation='structure',session_id='test')
     async def test_oversize_never_truncates_or_sends(self):
         def handler(request):self.fail('Oversize report must not be sent')
-        with self.assertRaises(ValueError):
+        with self.assertRaises(RuntimeError):
             await FirestoreCaptureStore(httpx.MockTransport(handler)).save({'text':'a'*700001},operation='read_visible',session_id='test')
+
+    async def test_api_diagnostic_does_not_echo_remote_secrets(self):
+        handler=lambda r:httpx.Response(403,json={'error':{'status':'PERMISSION_DENIED','message':'secret_remote_key','details':[{'reason':'API_KEY_SERVICE_BLOCKED'}]}})
+        with self.assertRaisesRegex(RuntimeError,'API_KEY_SERVICE_BLOCKED') as caught:
+            await FirestoreCaptureStore(httpx.MockTransport(handler)).save({},operation='structure',session_id='test')
+        self.assertNotIn('secret_remote_key',str(caught.exception))

@@ -87,3 +87,8 @@ Validation: 63/63 tests pass after behavior changes, including Chromium UI check
 
 ## Firebase RAW capture adapter — 2026-10-11
 Added fixed-project public-rule REST capture commits after user supplied Web configuration. No local capture/log writes or report download. Verified receipts, create-only same-operation retry/readback, raw text preservation and explicit size rejection implemented. 67/67 tests passed. Actual connectivity-test save unconfirmed; separate HTTPS probe identifies proxy 403 Forbidden before Firestore can be reached. No real Firebase write receipt, original file upload, document extraction, authenticated backend or multi-device business processing is claimed. Windows source update/restart and live save verification are the next gate.
+
+## User-observed Firestore document presence — 2026-10-11
+User confirmed saving and supplied a console screenshot with three capture documents under tenants/default/captures. This resolves the reported absence of cloud records at the user-observation level; no document payload/receipt was inspected independently. Missing parent document message is consistent with valid subcollection writes. No chat content or individual cloud document IDs were published.
+
+Improved UI to show pending/saved/error cloud status and verified document paths; added local-only diagnostic cloud write that does not read Zalo. Fixed-code Firestore diagnostics preserve remote-body/credential privacy. 70/70 automated tests passed. This does not establish document extraction, authenticated tenant isolation, Storage uploads, business deduplication or realtime multi-device app completeness.

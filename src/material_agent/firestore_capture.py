@@ -12,6 +12,13 @@ API_KEY = 'AIzaSyBs8uvIXa7cRdfoQVTSpOph05aM2PouIvo'  # Public Firebase client co
 DOCUMENTS = f'https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents'
 
 
+class CloudStorageError(RuntimeError):
+    """Only a fixed diagnostic code, never remote body/credentials."""
+    def __init__(self, code):
+        self.code=code
+        super().__init__('Firestore: ' + code)
+
+
 class FirestoreCaptureStore:
     def __init__(self, transport=None):
         self.transport = transport
@@ -21,7 +28,7 @@ class FirestoreCaptureStore:
             raise ValueError('Capture operation not permitted')
         raw = json.dumps(report, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
         if len(raw.encode('utf-8')) > 700_000:
-            raise ValueError('Capture too large; needs cloud chunking, never truncate silently')
+            raise CloudStorageError('CAPTURE_TOO_LARGE')
         capture_id = str(uuid4())
         digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         name = f'projects/{PROJECT_ID}/databases/(default)/documents/tenants/default/captures/{capture_id}'
@@ -47,9 +54,20 @@ class FirestoreCaptureStore:
                             return {'saved': True, 'projectId': PROJECT_ID,
                                     'documentPath': f'tenants/default/captures/{capture_id}',
                                     'commitTime': ack['commitTime']}
-                        raise RuntimeError('Invalid cloud acknowledgement')
+                        raise CloudStorageError('INVALID_ACK')
                     if response.status_code not in {409, 429, 500, 502, 503, 504}:
-                        raise RuntimeError('Cloud access rejected; check project rules and API configuration')
+                        code='HTTP_' + str(response.status_code)
+                        try:
+                            error=response.json().get('error', {})
+                            status=error.get('status')
+                            if status in {'PERMISSION_DENIED','UNAUTHENTICATED','NOT_FOUND','INVALID_ARGUMENT','FAILED_PRECONDITION','RESOURCE_EXHAUSTED'}:
+                                code=status
+                            for detail in error.get('details', []):
+                                if isinstance(detail, dict) and detail.get('reason') in {'API_KEY_INVALID','API_KEY_SERVICE_BLOCKED','API_KEY_HTTP_REFERRER_BLOCKED','SERVICE_DISABLED','BILLING_DISABLED'}:
+                                    code=detail['reason']
+                        except (ValueError, AttributeError, TypeError):
+                            pass
+                        raise CloudStorageError(code)
                 except httpx.TransportError:
                     pass
                 # Lost ACK or create conflict: same UUID, read back to verify payload identity.
@@ -65,7 +83,7 @@ class FirestoreCaptureStore:
                             return {'saved': True, 'projectId': PROJECT_ID,
                                     'documentPath': f'tenants/default/captures/{capture_id}',
                                     'commitTime': doc['updateTime']}
-                        raise RuntimeError('Cloud capture identity conflict')
+                        raise CloudStorageError('CAPTURE_IDENTITY_CONFLICT')
                 except httpx.TransportError:
                     pass
-        raise RuntimeError('Cloud save unconfirmed; no local fallback or checkpoint')
+        raise CloudStorageError('NETWORK_OR_ACK_UNCONFIRMED')
