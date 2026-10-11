@@ -77,17 +77,25 @@ class Controller:
         self.saved_report=None
         self.saved_receipt=None
         self.data_revision=0
+        self.auto_setup_status=None
         self.monitor_stats={'checks':0,'unchanged':0,'saved':0}
         self.activity=deque(maxlen=20)
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
-        return {'dashboard':self.dashboard(),'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
+        return {'auto_setup':self.auto_setup_status,'dashboard':self.dashboard(),'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
                 'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
                 'business_storage':'FIRESTORE_RECOVERABLE_CAPTURE',
                 'last_cloud_capture':self.last_cloud_capture,
                 'business_data_persisted':self.last_cloud_capture is not None,'local_business_persistence':False}
+
+    async def auto_setup(self):
+        from .auto_setup import configure_mcp_clients
+        try: router=await self.router.auto_configure()
+        except Exception: router={'state':'AUTO_CONFIGURATION_FAILED','source_data_sent':False}
+        self.auto_setup_status={'router':router,'mcp':configure_mcp_clients(),'source_data_sent':False}
+        return self.auto_setup_status
 
     def dashboard(self):
         report=self.saved_report or {}
@@ -241,6 +249,8 @@ def create_app(token, controller=None, port=8765, clock=None):
     @asynccontextmanager
     async def lifespan(app):
         await controller.router.start()
+        import sys
+        if sys.platform=='win32': await controller.auto_setup()
         try:
             yield
         finally:
@@ -407,6 +417,12 @@ def create_app(token, controller=None, port=8765, clock=None):
                 return {'cloudStorage':receipt,'kind':'CONNECTIVITY_TEST','containsZaloContent':False}
             except CloudStorageError as exc:
                 raise StopAutomation(str(exc)) from None
+
+    @app.post('/api/local/auto-configure')
+    async def auto_configure(request:Request):
+        local_only(request)
+        async with controller.lock:
+            return await controller.auto_setup()
 
     @app.post('/api/local/mcp-config')
     async def mcp_config(request:Request):

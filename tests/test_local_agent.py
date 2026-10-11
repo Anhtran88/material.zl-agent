@@ -46,6 +46,14 @@ class LocalAgentTests(unittest.TestCase):
         self.local={**self.auth,'Origin':'http://127.0.0.1:8765'}
     def tearDown(self): self.client.close(); self.tmp.cleanup()
     def connect(self): self.assertEqual(self.client.post('/api/local/connect',headers=self.local).status_code,200)
+    def test_auto_configuration_requires_local_origin_and_exposes_no_keys(self):
+        self.assertEqual(self.client.post('/api/local/auto-configure',headers=self.auth).status_code,403)
+        response=self.client.post('/api/local/auto-configure',headers=self.local)
+        self.assertEqual(response.status_code,200)
+        self.assertFalse(response.json()['source_data_sent'])
+        self.assertFalse(response.json()['mcp']['cloud_chat_connected'])
+        self.assertNotIn('api_key',response.text)
+
     def test_cloud_probe_is_local_and_does_not_need_or_read_zalo(self):
         self.assertEqual(self.client.post('/api/local/cloud-test',headers=self.auth).status_code,403)
         response=self.client.post('/api/local/cloud-test',headers=self.local)

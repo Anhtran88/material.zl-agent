@@ -30,7 +30,7 @@
 <label>Lý do duyệt<input id="reviewReason" maxlength="1000" placeholder="Vì sao các ảnh đã chọn thuộc tin nhắn này?"></label>
 <button id="reviewBundles" disabled>Lưu liên kết đã duyệt lên Firestore</button>
 <p><small>Có thể gộp tin bổ sung vào một tin chính, hoặc tách lại ở lần duyệt tiếp. Ảnh chưa chọn giữ trạng thái cần duyệt. Có thể chọn từng ảnh của album cho các tin khác nhau. Ngày xác nhận trên phiếu chưa được trích xuất; không dùng giờ tin nhắn thay thế.</small></p></section>
-<section><h2>9Router</h2><p>Cấu hình cục bộ. Kiểm tra <code>/models</code> không gửi dữ liệu Zalo sang AI.</p>
+<section><h2>9Router</h2><button id="autoConfigure">⚙ Tự động cấu hình 9Router và MCP</button><p id="autoConfigState" role="status">Dùng cấu hình và khóa của bộ 9Router trên máy này.</p><p>Cấu hình cục bộ. Kiểm tra <code>/models</code> không gửi dữ liệu Zalo sang AI.</p>
 <label>API Base URL<input id="base" placeholder="http://127.0.0.1:20128/v1" autocomplete="off"></label>
 <label>Model<input id="model" placeholder="Chọn model sau khi kết nối provider" autocomplete="off"></label>
 <label>Model dự phòng (phân cách dấu phẩy)<input id="fallback" autocomplete="off"></label>
@@ -103,6 +103,17 @@ document.getElementById('reviewBundles').onclick=async()=>{
 document.getElementById('resume').onclick=()=>show('/api/local/resume','POST');
 document.getElementById('cloudTest').onclick=()=>show('/api/local/cloud-test','POST');
 document.getElementById('status').onclick=()=>show('/api/status');
+function renderAutoSetup(data){
+ const messages={PROVIDER_LOGIN_REQUIRED:'Đã cấu hình URL và API key. Cần đăng nhập nhà cung cấp AI trong 9Router, rồi bấm tự cấu hình lại.',CONFIGURED_CATALOG_ONLY:'Đã cấu hình URL, API key và model trong danh mục. Chưa kiểm chứng gọi AI.',ROUTER_NOT_READY:'9Router chưa sẵn sàng. Kiểm tra bộ cài hoặc cổng đang dùng.',MODEL_CATALOG_UNAVAILABLE:'Đã cấu hình kết nối; chưa lấy được danh mục model.',CUSTOM_ROUTE_PRESERVED:'Giữ cấu hình gateway riêng hiện có.',AUTO_CONFIGURATION_FAILED:'Chưa cấu hình được 9Router; kiểm tra bộ cài.'};
+ const clients=data.mcp.clients||[];document.getElementById('autoConfigState').textContent=(messages[data.router.state]||data.router.state)+' MCP: '+(clients.length?clients.map(c=>c.client+' — '+({CONFIGURED_RESTART_CLIENT:'đã cấu hình, khởi động lại ứng dụng',ALREADY_CONFIGURED:'đã cấu hình',EXISTING_ENTRY_PRESERVED:'giữ cấu hình hiện có',MANUAL_REVIEW_REQUIRED:'cần kiểm tra file cấu hình'}[c.state]||c.state)).join('; '):'chưa tìm thấy Claude Desktop, Cursor hoặc Windsurf trên Windows. Cầu nối này chưa kết nối phiên chat cloud.');
+}
+document.getElementById('autoConfigure').onclick=async()=>{
+ const button=document.getElementById('autoConfigure'),state=document.getElementById('autoConfigState');button.disabled=true;state.textContent='Đang cấu hình 9Router và tìm ứng dụng MCP…';
+ try{const data=await api('/api/local/auto-configure','POST');result.textContent=JSON.stringify(data,null,2);
+ renderAutoSetup(data);
+ const settings=await api('/api/ai/settings');if(settings.configured){document.getElementById('base').value=settings.base_url;document.getElementById('model').value=settings.model;document.getElementById('fallback').value=settings.fallback_models.join(',');}
+ }catch(e){state.textContent=e.message;}finally{button.disabled=false;}
+};
 document.getElementById('saveAI').onclick=async()=>{const settings={base_url:document.getElementById('base').value,model:document.getElementById('model').value,fallback_models:document.getElementById('fallback').value.split(',').map(x=>x.trim()).filter(Boolean),api_key:document.getElementById('key').value};document.getElementById('key').value='';await show('/api/local/ai/settings','POST',settings);};
 document.getElementById('openRouter').onclick=()=>show('/api/local/router/dashboard','POST');
 document.getElementById('routerState').onclick=()=>show('/api/router/status');
@@ -112,6 +123,7 @@ let displayedRevision=-1,monitorFetching=false;
 const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v*1000:v);return Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false});};
 function renderDashboard(s){
  const d=s.dashboard||{},m=s.monitor||{},c=d.savedCapture||{},badge=document.getElementById('runBadge');
+ if(s.auto_setup&&!document.getElementById('autoConfigState').dataset.shown){document.getElementById('autoConfigState').dataset.shown='yes';renderAutoSetup(s.auto_setup);}
  const phases={RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
  badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
  badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');

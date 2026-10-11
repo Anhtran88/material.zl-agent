@@ -27,6 +27,7 @@ class RouterRuntime:
         self.process=None; self.dashboard=None; self.playwright=None
         self.status={'installed':self.server.is_file(),'running':False,'bootstrap_complete':False}
         self.cookie_records=[]
+        self.owned_api_key=None
 
     async def start(self):
         if not self.server.is_file() or not Path(self.node).is_file():
@@ -84,6 +85,7 @@ class RouterRuntime:
                     created=await client.post('/api/keys',json={'name':'ZaloMaterialAgent'})
                     created.raise_for_status(); api_key=created.json()['key']
                 if not isinstance(api_key,str) or not api_key: raise RuntimeError('Invalid key response')
+                self.owned_api_key=api_key
                 # Preserve a user-edited gateway configuration; bootstrap the owned route once.
                 if not self.gateway.path.exists():
                     self.gateway.save(GatewayConfig(self.origin+'/v1',api_key=api_key))
@@ -117,6 +119,30 @@ class RouterRuntime:
             self.status["state"]="ROUTER_STATUS_UNAVAILABLE"
         return self.status
 
+    async def auto_configure(self):
+        if not self.status.get('bootstrap_complete'):
+            await self.start()
+        if not self.status.get('bootstrap_complete') or not self.owned_api_key:
+            return {'state':'ROUTER_NOT_READY','runtime':dict(self.status),'source_data_sent':False}
+        config=self.gateway.load() if self.gateway.path.exists() else GatewayConfig(self.origin+'/v1')
+        if config.base_url!=self.origin+'/v1':
+            return {'state':'CUSTOM_ROUTE_PRESERVED','settings':self.gateway.summary(),'source_data_sent':False}
+        config.api_key=self.owned_api_key
+        self.gateway.save(config)
+        runtime=await self.refresh_status()
+        if not runtime.get('provider_connections'):
+            return {'state':'PROVIDER_LOGIN_REQUIRED','settings':self.gateway.summary(),'source_data_sent':False}
+        probe=await self.gateway.probe()
+        available=sorted(set(m for m in probe.get('available_models',[]) if m and len(m)<=200))
+        if not probe.get('reachable') or not available:
+            return {'state':'MODEL_CATALOG_UNAVAILABLE','settings':self.gateway.summary(),'source_data_sent':False}
+        if not config.model:
+            config.model=available[0]
+        self.gateway.save(config)
+        return {'state':'CONFIGURED_CATALOG_ONLY','settings':self.gateway.summary(),
+                'available_models':available,'model_advertised':config.model in available,
+                'completion_verified':False,'source_data_sent':False}
+
     async def open_dashboard(self):
         if not self.status.get('bootstrap_complete') or not self.cookie_records:
             raise RuntimeError('Owned router is not ready')
@@ -146,5 +172,5 @@ class RouterRuntime:
             try: await asyncio.to_thread(self.process.wait,10)
             except subprocess.TimeoutExpired:
                 self.process.kill(); await asyncio.to_thread(self.process.wait,5)
-        self.process=None; self.cookie_records=[]
+        self.process=None; self.cookie_records=[]; self.owned_api_key=None
         self.status['running']=False
