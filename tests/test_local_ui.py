@@ -6,7 +6,7 @@ from pathlib import Path
 import uvicorn
 from material_agent.ai_gateway import GatewayService
 from material_agent.local_agent import Controller,create_app
-from test_local_agent import Browser,Router
+from test_local_agent import Browser,Router,CaptureStore
 
 class LocalUITests(unittest.IsolatedAsyncioTestCase):
     async def test_browser_pair_connect_export_state_and_stop(self):
@@ -15,7 +15,7 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sock=socket.socket();sock.bind(('127.0.0.1',0));sock.listen(128)
             port=sock.getsockname()[1];origin=f'http://127.0.0.1:{port}'
-            control=Controller(browser=Browser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router())
+            control=Controller(browser=Browser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router(),capture_store=CaptureStore())
             app=create_app('ui-test-key',control,port=port)
             server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
             task=asyncio.create_task(server.serve(sockets=[sock]))

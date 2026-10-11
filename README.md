@@ -2,7 +2,7 @@
 
 Read ARCHITECTURE.md and IMPLEMENTATION_PLAN.md first.
 
-**Current storage direction:** Firestore + Firebase Storage for all business data. Firebase setup is pending; Local Agent currently previews data in memory only, with no automatic report/log files or report download. Legacy PoC/export launchers below are disabled; their instructions are historical. See schemas/firestore.md and docs/FIREBASE_SETUP.md. M1 is a supervised, fail-closed read PoC accepted under the user-approved reduced scope in IMPLEMENTATION_PLAN.md. No bundle/accounting/AI/dashboard implementation yet.
+**Current storage direction:** Firestore + Firebase Storage for business data. Current Local Agent stores bounded RAW read/structure reports directly in materialzlagent Firestore under tenants/default/captures using the user-requested public-rule prototype. No automatic local capture/log persistence or report download. Real Windows/cloud verification is pending; this environment's proxy blocks Firestore. Authenticated ingestion, multi-device business processing and Storage uploads remain unimplemented. See schemas/firestore.md and docs/FIREBASE_SETUP.md.
 
 Windows Python 3.12+:
 

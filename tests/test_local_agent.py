@@ -19,6 +19,10 @@ class Browser:
         if self.fail: raise StopAutomation('secret_should_not_leak')
         return {'operation':op,'layer':'RAW_UNVERIFIED','messages':[]}
 
+class CaptureStore:
+    async def save(self, report, **kwargs):
+        return {'saved':True,'projectId':'mock-project','documentPath':'tenants/default/captures/mock','commitTime':'mock-time'}
+
 class Router:
     status={'installed':False,'running':False}
     async def start(self): pass
@@ -31,7 +35,7 @@ class LocalAgentTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(); root=Path(self.tmp.name)
         self.now=[1.0]; self.browser=Browser()
         self.controller=Controller(browser=self.browser,root=root,
-            gateway=GatewayService(root/'gateway.json'),router=Router(),clock=lambda:self.now[0])
+            gateway=GatewayService(root/'gateway.json'),router=Router(),clock=lambda:self.now[0],capture_store=CaptureStore())
         self.app=create_app('test-secret',self.controller,clock=lambda:self.now[0])
         self.client=TestClient(self.app,base_url='http://127.0.0.1:8765')
         self.auth={'Authorization':'Bearer test-secret'}
@@ -67,8 +71,8 @@ class LocalAgentTests(unittest.TestCase):
         self.assertFalse((Path(self.tmp.name)/'cache').exists())
         self.assertFalse((Path(self.tmp.name)/'logs').exists())
         state=self.controller.status()
-        self.assertEqual(state['business_storage'],'CLOUD_NOT_CONFIGURED')
-        self.assertFalse(state['business_data_persisted'])
+        self.assertEqual(state['business_storage'],'FIRESTORE_RAW_PROTOTYPE')
+        self.assertTrue(state['business_data_persisted'])
         self.client.post('/api/disconnect',headers=self.auth)
         self.assertTrue(self.browser.closed)
         self.assertEqual(self.client.post('/api/structure',headers=self.auth).status_code,409)

@@ -49,3 +49,6 @@ User screenshot confirms MaterialZlAgent (materialzlagent, project number 939657
 
 ## Firestore rule override — 2026-10-11
 User explicitly requested unrestricted, non-expiring Firestore rules. Committed allow read/write if true, including unauthenticated clients; no deployment performed. This supersedes the earlier deny-all Firestore scaffold for the current requested configuration. Tenant isolation/security acceptance gates remain unmet; unrestricted access is not proof of cloud readiness. Storage policy was not changed.
+
+## RAW Firestore connection implementation — 2026-10-11
+Added fixed-project REST RAW capture commits for materialzlagent using the user's public Firebase client config and requested public rules. One bounded immutable capture per read/structure operation, server receipt time, create-only retry/readback, no local fallback, explicit verified cloud receipt. This replaces memory-preview-only behavior on updated Windows installs. 67/67 automated tests passed; actual environment Firestore probe blocked by proxy 403, so real cloud save pending Windows verification. Authenticated ingestion, chunking, tenant isolation, multi-device state leases and Storage uploads remain gated cloud-foundation work; this interim prototype is not the full schema/services implementation.

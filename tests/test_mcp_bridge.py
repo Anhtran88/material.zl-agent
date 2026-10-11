@@ -14,7 +14,7 @@ from mcp.client.stdio import stdio_client
 from material_agent.ai_gateway import GatewayService
 from material_agent.bridge_credentials import write_connection
 from material_agent.local_agent import Controller,create_app
-from test_local_agent import Browser,Router
+from test_local_agent import Browser,Router,CaptureStore
 
 def payload(result):
     return result.structuredContent or json.loads(next(c.text for c in result.content if c.type=="text"))
@@ -24,7 +24,7 @@ class MCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'LOCALAPPDATA':tmp}):
             sock=socket.socket();sock.bind(('127.0.0.1',0));sock.listen(128)
             port=sock.getsockname()[1];origin=f'http://127.0.0.1:{port}'
-            controller=Controller(browser=Browser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router())
+            controller=Controller(browser=Browser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router(),capture_store=CaptureStore())
             app=create_app('local-test-key',controller,port=port)
             server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
             task=asyncio.create_task(server.serve(sockets=[sock]))

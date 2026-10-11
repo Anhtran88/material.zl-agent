@@ -1,12 +1,68 @@
 {
   "indexes": [
-    {"collectionGroup":"deliveries","queryScope":"COLLECTION","fields":[{"fieldPath":"validationStatus","order":"ASCENDING"},{"fieldPath":"confirmedDeliveryDate","order":"DESCENDING"}]},
-    {"collectionGroup":"jobs","queryScope":"COLLECTION","fields":[{"fieldPath":"state","order":"ASCENDING"},{"fieldPath":"nextRetryAt","order":"ASCENDING"}]},
-    {"collectionGroup":"messages","queryScope":"COLLECTION","fields":[{"fieldPath":"conversationId","order":"ASCENDING"},{"fieldPath":"capturedAt","order":"ASCENDING"}]}
+    {
+      "collectionGroup": "deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "validationStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "confirmedDeliveryDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextRetryAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "conversationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "capturedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    }
   ],
   "fieldOverrides": [
-    {"collectionGroup":"messages","fieldPath":"rawText","indexes":[]},
-    {"collectionGroup":"messages","fieldPath":"rawMetadata","indexes":[]},
-    {"collectionGroup":"documentPages","fieldPath":"textContent","indexes":[]}
+    {
+      "collectionGroup": "messages",
+      "fieldPath": "rawText",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "messages",
+      "fieldPath": "rawMetadata",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "documentPages",
+      "fieldPath": "textContent",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "captures",
+      "fieldPath": "reportJson",
+      "indexes": []
+    }
   ]
 }

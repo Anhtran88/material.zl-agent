@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
+from .firestore_capture import FirestoreCaptureStore
 from .local_browser import LocalBrowser
 from .login import profile_path
 from .models import StopAutomation
@@ -34,7 +35,7 @@ class GatewaySettings(BaseModel):
 
 
 class Controller:
-    def __init__(self, browser=None, root=None, gateway=None, clock=None, router=None):
+    def __init__(self, browser=None, root=None, gateway=None, clock=None, router=None, capture_store=None):
         self.browser=browser or LocalBrowser()
         self.root=Path(root or profile_path().parent)
         self.gateway=gateway or GatewayService()
@@ -43,14 +44,17 @@ class Controller:
         self.enabled=False; self.until=0; self.lock=asyncio.Lock()
         self.session_id=str(uuid4())
         self.audit_events=deque(maxlen=200)
+        self.capture_store=capture_store or FirestoreCaptureStore()
+        self.last_cloud_capture=None
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
         return {'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
                 'milestone_1_accepted':True,'checkpoint_advanced':False,
-                'business_storage':'CLOUD_NOT_CONFIGURED',
-                'business_data_persisted':False,'local_business_persistence':False}
+                'business_storage':'FIRESTORE_RAW_PROTOTYPE',
+                'last_cloud_capture':self.last_cloud_capture,
+                'business_data_persisted':self.last_cloud_capture is not None,'local_business_persistence':False}
 
     def audit(self, event, outcome):
         # Operational metadata only, bounded memory until cloud ingestion is configured.
@@ -61,15 +65,18 @@ class Controller:
         async with self.lock:
             if not self.status()['connected']:
                 raise StopAutomation('Connect locally before browser reads')
+            self.last_cloud_capture=None
             try:
                 result=await self.browser.execute(operation)
-                # Preview only: no local capture, and no durable/cloud success claim.
+                receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
+                self.last_cloud_capture=receipt
+                result={**result,'cloudStorage':receipt}
                 self.audit(operation,'OK')
                 return result
             except Exception:
                 self.enabled=False
                 self.audit(operation,'PAUSED_USER')
-                raise StopAutomation('Paused: verify browser/source/security and reconnect locally') from None
+                raise StopAutomation('Paused: cloud save or browser verification failed; check cloud rules/network and reconnect locally') from None
 
 
 def create_app(token, controller=None, port=8765, clock=None):

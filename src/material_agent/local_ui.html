@@ -4,8 +4,8 @@
 <section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
 <p id="state">Chưa kết nối</p><small>Kết nối đọc có hiệu lực 30 phút. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra.</small>
-<hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="export" disabled>Lưu cloud: chờ cấu hình Firebase</button>
-<p><small>Dữ liệu chỉ xem tạm trong bộ nhớ, chưa lưu cloud; không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
+<hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="export" disabled>Tự lưu Firestore sau khi đọc</button>
+<p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
 <section><h2>9Router</h2><p>Cấu hình cục bộ. Kiểm tra <code>/models</code> không gửi dữ liệu Zalo sang AI.</p>
 <label>API Base URL<input id="base" placeholder="http://127.0.0.1:20128/v1" autocomplete="off"></label>
 <label>Model<input id="model" placeholder="Chọn model sau khi kết nối provider" autocomplete="off"></label>
