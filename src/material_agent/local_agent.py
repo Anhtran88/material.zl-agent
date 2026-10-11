@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
 from .bundle_engine import build_bundles, review_bundles, BundleInputError
+from .extraction import extract_report
 from .firestore_capture import CloudStorageError
 from .recovery_store import RecoverableFirestoreStore
 from .local_browser import LocalBrowser, SOURCE
@@ -142,7 +143,10 @@ class Controller:
             source=report.get('candidateSourceId')
             for name,target in [('messages',messages),('attachments',attachments)]:
                 for item in report.get(name,[]): target[(source,item['domContainerId'])]=item
-        return {'messages':list(messages.values()),'attachments':list(attachments.values())}
+        rows=[]
+        for report in self.group_reports.values():
+            rows.extend(extract_report(report)['rows'])
+        return {'messages':list(messages.values()),'attachments':list(attachments.values()),'extraction':{'rows':rows}}
 
     def record_capture(self, report, receipt):
         self.saved_report=report
@@ -190,6 +194,7 @@ class Controller:
             if added or changed or not self.bundle_report:
                 self.stage('BUNDLING','Đang tạo đề xuất bundle từ nội dung mới…')
                 report={**report,'bundleEngine':build_bundles(report,allowed_source=self.active_source)}
+                report['extraction']=extract_report(report)
                 self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
                 receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
                 self.record_capture(report,receipt)
@@ -315,6 +320,7 @@ class Controller:
                 result=await self.browser.execute(operation)
                 if operation=='read_visible':
                     result={**result,'bundleEngine':build_bundles(result,allowed_source=self.active_source)}
+                    result['extraction']=extract_report(result)
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
                 self.last_cloud_capture=receipt
                 if operation=='read_visible':

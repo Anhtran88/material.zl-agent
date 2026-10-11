@@ -65,3 +65,6 @@ User waived manual per-image review and accepted M2's proposal-generation scope,
 2026-10-11: M3 extended with Play/Pause backend monitoring, verified conversation bottom scrolling, Firestore resume and change-only saves. Bounded catch-up to the saved DOM anchor is implemented; live scroll acceptance remains open; no M4 advancement.
 
 Multi-group update: checkboxes for both user-named groups, cloud-persisted added groups/selection, exact-name browser selection and candidate ID binding, separate source recovery/checkpoints and a shared snapshot summary. M4 extraction/financial acceptance and full historical cloud summary queries remain outside this change.
+
+## Current step — M4 text phase
+User confirmed multi-group Play success. M4 begins with evidence-backed message extraction and a shared structured table, cloud-only persisted alongside new captures. See docs/MILESTONE_4_REPORT.md. The slip date remains unknown until OCR/document evidence exists; image OCR and PDF/Word/Excel providers remain within the M4 gate. Do not start M5 or mark M4 fully accepted yet.

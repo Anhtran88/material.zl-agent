@@ -16,7 +16,7 @@
 <h3>Bảng tổng hợp dữ liệu Zalo</h3><p id="savedStatus" role="status">Chưa xác nhận bản dữ liệu Zalo. Kiểm tra kết nối Firestore không phải bản lưu tin nhắn.</p>
 <div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bảng tổng hợp</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bảng tổng hợp</small><strong id="savedImages">0</strong></div></div>
 <p id="savedPath" class="path"></p><p><small>Ảnh hiện được lưu dưới dạng thông tin tham chiếu, chưa có file ảnh gốc. Ngày xác nhận trên phiếu chưa được trích xuất.</small></p>
-<div id="captureMessages"><p>Chưa có nội dung đã lưu trong phiên. Play hoặc “Khôi phục lần đọc từ Firestore” để tải bản lưu trước.</p></div>
+<h3>Thông tin vật tư trích xuất</h3><p><small>Giữ từng khối lượng riêng; ngày trong tin nhắn chưa phải ngày xác nhận trên phiếu.</small></p><div style="overflow-x:auto"><table id="extractionTable"><thead><tr><th>Ngày tin nhắn</th><th>Vật tư</th><th>Công trình</th><th>Khối lượng</th><th>Ngày xác nhận phiếu</th><th>Kiểm tra</th></tr></thead><tbody></tbody></table></div><div id="captureMessages"><p>Chưa có nội dung đã lưu trong phiên. Play hoặc “Khôi phục lần đọc từ Firestore” để tải bản lưu trước.</p></div>
 <details><summary>Thông tin ảnh đã ghi nhận</summary><div id="captureImages"></div></details>
 <details open><summary>Hoạt động gần đây trong phiên</summary><ol id="activity"><li>Chưa chạy.</li></ol></details>
 </section>
@@ -167,6 +167,13 @@ function renderDashboard(s){
  document.getElementById('pause').disabled=!s.monitor_running;
 }
 function renderSaved(data){
+ const body=document.querySelector('#extractionTable tbody');body.replaceChildren();
+ for(const row of data.aggregate?.extraction?.rows||data.extraction?.rows||[]){
+  const tr=document.createElement('tr');
+  const fields=[row.messageDates.map(x=>x.raw).join('; ')||'Chưa xác định',row.materials.map(x=>x.value).join('; ')||'Chưa xác định',row.projects.map(x=>x.value).join('; ')||'Chưa xác định',row.quantities.map(x=>(x.value??x.raw)+' '+x.unit).join('; ')||'Chưa xác định','Chưa đọc phiếu',row.missingFields.length?'Cần kiểm tra: '+row.missingFields.join(', '):'Đã trích xuất nội dung'];
+  for(const value of fields){const td=document.createElement('td');td.textContent=value;tr.append(td);}body.append(tr);
+ }
+
  const messages=document.getElementById('captureMessages');messages.replaceChildren();
  for(const [i,m] of (data.aggregate?.messages||data.messages||[]).entries()){
   const item=document.createElement('article');item.className='saved-item';const title=document.createElement('strong');title.textContent='Tin '+(i+1)+' · đã lưu';
