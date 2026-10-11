@@ -26,3 +26,7 @@ Final full-suite run after OCR JSON-budget hardening: 153 tests passed in 39.036
 
 ## Group click recovery — 2026-10-12
 Full pinned-router suite: 156 tests passed in 43.110s. Real Chromium regression recreates a conversation grid centre covered by a sidebar element while its title remains clickable; native title click switches and verifies the correct group. Added transient native-click retry and changed-ID refusal tests. This reproduces a plausible cause of GROUP_CLICK_FAILED from the user's screenshot, not live inspection of their Windows browser; completely covered titles remain a safe stop.
+
+## Operations dashboard — 2026-10-12
+Added offline real-Chromium tests for shared multi-source rows, accent-insensitive search, material/status/date filtering, empty states, reset, filter preservation after refresh, evidence dialogs and XSS-safe OCR/original-text display. Mobile checks cover navigation, no document-width overflow, unchanged URL pairing hash, no localStorage and disabling Play after disconnection. The previous end-to-end UI test still exercises group addition/selection, reading, association review, gateway settings and stopping. Screenshots were inspected locally using explicitly synthetic UI test fixtures; they are not live business evidence. No external fonts/assets/CDNs or business-data local exports were added.
+Final pinned real-9Router full suite: 158 tests passed in 45.462s. Desktop 1440px and mobile 390px layouts were inspected; the UI requires no new runtime dependencies and preserves cloud-only business storage.
