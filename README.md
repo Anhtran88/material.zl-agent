@@ -21,3 +21,17 @@ The selector contract requires data-conversation-id/data-title on source and act
 Only visible messages are captured; no claim of historical completeness. Source must already be visible in the conversation list; automated search and scrolling await verified live DOM. Login is manual. Challenges/UI drift stop automation. Navigation may mark messages read; evaluate this platform effect during acceptance. Never enter the composer. Browser profile/raw timeline contain private data: keep local Windows user-only permissions, outside OneDrive and Git. No automatic cache deletion or business checkpoint in M1.
 
 Run offline checks: `PYTHONPATH=src python -m unittest discover -s tests -v`.
+
+## Manual login browser on Windows
+
+Install Python 3.12 and Git, clone this repository, then run from PowerShell:
+
+```powershell
+git clone https://github.com/Anhtran88/material.zl-agent.git
+cd material.zl-agent
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-ZaloLogin.ps1
+```
+
+The script creates the project's `.venv`, installs the package and Playwright Chromium, and opens a headed manual-only login browser. It does not need Zalo selectors and does not read/search groups, join groups, download attachments or send content. Close with Enter in the terminal. Profile stays under `%LOCALAPPDATA%\ZaloMaterialAgent\browser-profile`; never sync or share it. Use a private Windows account and its user-only folder permissions. A successful login is not M1 acceptance; live adapter mapping and coverage verification are still required.
+
+Cloud execution requires the environment owner to configure permitted Zalo destinations using the environment settings workflow and enable an interactive browser. Current agent tools expose read-only environment status, not configuration editing or browser presentation. Local Windows login does not change the cloud network policy.
