@@ -105,6 +105,7 @@ DOM_PROBE = r'''({source, operation}) => {
 class LocalBrowser:
     def __init__(self):
         self.context = self.page = self.playwright = None
+        self.source=dict(SOURCE)
 
     async def start(self):
         if self.page is not None and not self.page.is_closed():
@@ -130,7 +131,7 @@ class LocalBrowser:
         if url.scheme != 'https' or url.hostname != 'chat.zalo.me' or url.port not in (None,443):
             raise StopAutomation('Unexpected origin')
         try:
-            return await self.page.evaluate(DOM_PROBE, {'source': SOURCE, 'operation': operation})
+            return await self.page.evaluate(DOM_PROBE, {'source': self.source, 'operation': operation})
         except Exception as exc:
             errors={
                 'CHALLENGE_VISIBLE':'Có hộp thoại hoặc bước xác minh. Hoàn tất trên Zalo rồi kết nối lại.',
@@ -141,6 +142,38 @@ class LocalBrowser:
             for code,message in errors.items():
                 if 'ZMA:'+code in str(exc): raise StopAutomation(message,code=code) from None
             raise StopAutomation('Source/UI/security verification failed; reconnect locally after checking browser',code='BROWSER_VERIFICATION_FAILED') from None
+
+    async def select_group(self, group):
+        import asyncio
+        for attempt in range(60):
+            if self.page is None or self.page.is_closed(): raise StopAutomation('Mở Zalo trước.',code='BROWSER_REQUIRED')
+            url=urlsplit(self.page.url)
+            if url.scheme!='https' or url.hostname!='chat.zalo.me' or url.port not in (None,443): raise StopAutomation('Unexpected origin')
+            outcome=await self.page.evaluate(r"""group => {
+              const norm=s=>s.normalize('NFC').replace(/\s+/gu,' ').trim();
+              if([...document.querySelectorAll('[role="dialog"],input[type="password"],[id*="captcha" i]')].some(n=>n.getClientRects().length)) return {error:'CHALLENGE_VISIBLE'};
+              const rows=[...document.querySelectorAll('[data-id="div_TabMsg_ThrdChItem"]')];
+              const matches=rows.filter(n=>norm(n.querySelector('.conv-item-title__name .truncate')?.textContent||'')===norm(group.title));
+              if(matches.length>1)return {error:'GROUP_AMBIGUOUS'};
+              if(matches.length===1){const row=matches[0],id=row.getAttribute('anim-data-id');
+                if(!/^g[0-9]+$/.test(id||'') || (group.dom_id && group.dom_id!==id)) return {error:'SOURCE_MISMATCH'};
+                row.click();return {source:{title:group.title,dom_id:id}};}
+              if(!rows.length)return {error:'GROUP_LIST_MISSING'};
+              for(let n=rows[0].parentElement;n && n!==document.body;n=n.parentElement){
+                if(['auto','scroll'].includes(getComputedStyle(n).overflowY) && n.clientHeight>0 && rows.every(r=>n.contains(r)) && !n.querySelector('[id^="text-mCntr_"]')){
+                  const old=n.scrollTop;n.scrollTop=group.reset?0:n.scrollTop+n.clientHeight*0.7;
+                  return {moved:group.reset || n.scrollTop!==old};}}
+              return {error:'GROUP_NOT_FOUND'};
+            }""",{**group,'reset':attempt==0})
+            if outcome.get('error'):raise StopAutomation('Không mở được nhóm đã chọn: '+outcome['error'],code=outcome['error'])
+            if outcome.get('source'):
+                self.source=outcome['source']
+                await asyncio.sleep(0.5)
+                await self.execute('verify')
+                return dict(self.source)
+            if not outcome.get('moved'):break
+            await asyncio.sleep(0.2)
+        raise StopAutomation('Không tìm thấy nhóm trong danh sách hội thoại. Đóng tìm kiếm Zalo và bảo đảm đã tham gia nhóm.',code='GROUP_NOT_FOUND')
 
     async def read_latest(self, anchor=None):
         import asyncio

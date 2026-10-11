@@ -84,3 +84,13 @@ Automatic monitoring reads the viewport of the verified conversation scroller at
 ### Continuous Play connection renewal
 
 While Play is active, expiry of the 30-minute browser connection no longer disables it through status polling. At the next check near/after expiry, the worker re-verifies the configured source and renews for 30 minutes only on successful verification. Disconnect, failed verification, browser challenges, changed source and cloud failures still stop it. Paused/idle expired connections require a fresh Connect. Continuous authorization is bounded by the existing 8-hour local control token and at most 8 hours from Play; after that the Agent must be restarted. Status distinguishes automatic renewal from the control-session deadline.
+
+### Group checkboxes and shared summary
+
+The dashboard loads two cloud-configurable groups: **ĐỐI CHIẾU KL- KẾ TOÁN IJC** and **TDC-ĐỐI CHIẾU KL BÊ TÔN**. Tick one or both; changes are saved to `tenants/default/settings/zaloGroups` and pause the running worker. Press Play again after editing selections. Add an exact group name with **Thêm và lưu nhóm**; a new unchecked checkbox appears after the successful cloud write. Names are normalized, duplicate names are rejected and up to 20 groups are supported.
+
+Connect selects the first checked group. Play visits each checked group in sequence, resolving its candidate group ID from a unique exact-title conversation row, binding it to the cloud registry and re-verifying the selected row before reading. The Agent can scroll the conversation sidebar to locate a group, but does not join groups or guess IDs. Close Zalo search and ensure the account has already joined the named groups. A missing, duplicate-title or changed-ID source pauses the worker.
+
+Each source has its own Firestore lease, pending jobs, observed identities and checkpoint. Existing IJC IDs and paths remain unchanged. The shared summary combines source snapshots restored/read during this session and retains observed message/container records as subsequent windows arrive; it does not split the display by group. It is not a query of all historical cloud artifacts or finalized delivery quantities. After a restart, Play restores the latest durable snapshot for each checked group. Slip-date/OCR/financial processing is unchanged.
+
+Loading the group list also reads the latest confirmed cloud snapshot for registered/bound groups into the shared summary, including unchecked groups. These summary reads do not acquire leases, resume jobs or update checkpoints. Checkboxes control which groups are updated, rather than filtering the shared table. The summary is still based on durable snapshots and observations retained during the session, not a full historical-artifact query.

@@ -67,23 +67,31 @@ def write(path, data, old=None, *, create=False, timestamp=False):
     return w
 
 
-def artifact_manifest(report):
+def artifact_manifest(report, source=None):
+    source=source or SOURCE
     """Observed signatures, not proof of stable message/business identity."""
     result=[]
     for kind, collection in [('message','messages'),('attachment','attachments')]:
         for item in report.get(collection, []):
-            if not item.get('domContainerId','').endswith('-'+SOURCE['dom_id']):
+            if not item.get('domContainerId','').endswith('-'+source['dom_id']):
                 raise CloudStorageError('SOURCE_MISMATCH')
             # Keep DOM identity + content/metadata, not text alone; different IDs stay distinct.
-            signature=digest({'source':SOURCE['dom_id'],'kind':kind,'observed':item})
+            signature=digest({'source':source['dom_id'],'kind':kind,'observed':item})
             result.append((f'{ROOT}/evidenceArtifacts/{kind}_{signature}',
-                           {'sourceId':SOURCE['dom_id'],'kind':kind,'signature':signature,
+                           {'sourceId':source['dom_id'],'kind':kind,'signature':signature,
                             'observedJson':canonical(item),'identityProven':False}))
     if len(result)>400:raise CloudStorageError('ARTIFACT_LIMIT_EXCEEDED')
     return result
 
 
 class RecoverableFirestoreStore(FirestoreCaptureStore):
+    def __init__(self, transport=None, source=None):
+        super().__init__(transport)
+        self.source=dict(source or SOURCE)
+        key=hashlib.sha256(self.source['dom_id'].encode()).hexdigest()
+        self.lease_path=f'{ROOT}/sourceLeases/{key}'
+        self.checkpoint_path=f'{ROOT}/checkpoints/{key}'
+
     async def _request(self, client, method, url, **kwargs):
         try:
             response=await client.request(method,url,params={'key':API_KEY},**kwargs)
@@ -120,26 +128,26 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
 
     async def _claim(self, client, owner):
         for _ in range(3):
-            old,now=await self._get(client,LEASE_PATH)
+            old,now=await self._get(client,self.lease_path)
             v=values(old or {})
             if v.get('state')=='ACTIVE' and date(v['expiresAt'])>now:
                 raise CloudStorageError('SOURCE_BUSY')
-            new={'sourceId':SOURCE['dom_id'],'owner':owner,'token':v.get('token',0)+1,
+            new={'sourceId':self.source['dom_id'],'owner':owner,'token':v.get('token',0)+1,
                  'state':'ACTIVE','expiresAt':stamp(now+timedelta(seconds=LEASE_SECONDS)),
                  'pendingJobPath':v.get('pendingJobPath')}
-            try:await self._commit(client,[write(LEASE_PATH,new,old,create=old is None)])
+            try:await self._commit(client,[write(self.lease_path,new,old,create=old is None)])
             except CloudStorageError as exc:
-                check,_=await self._get(client,LEASE_PATH)
+                check,_=await self._get(client,self.lease_path)
                 if values(check or {}).get('owner')!=owner:
                     if exc.code in {'CAS_CONFLICT','FAILED_PRECONDITION','ABORTED'}:continue
                     raise
-            claimed,_=await self._get(client,LEASE_PATH)
+            claimed,_=await self._get(client,self.lease_path)
             if values(claimed or {}).get('owner')!=owner:raise CloudStorageError('STALE_LEASE')
             return claimed
         raise CloudStorageError('SOURCE_BUSY')
 
     async def _lease(self, client, owner, token):
-        lease,now=await self._get(client,LEASE_PATH)
+        lease,now=await self._get(client,self.lease_path)
         v=values(lease or {})
         if (v.get('owner')!=owner or v.get('token')!=token or v.get('state')!='ACTIVE'
                 or date(v['expiresAt'])<=now+timedelta(seconds=60)):
@@ -147,11 +155,11 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
         return lease,now
 
     async def _release(self, client, owner, token):
-        old,now=await self._get(client,LEASE_PATH)
+        old,now=await self._get(client,self.lease_path)
         v=values(old or {})
         if v.get('owner')!=owner or v.get('token')!=token:return
         v.update(state='IDLE',owner=None,expiresAt=stamp(now))
-        await self._commit(client,[write(LEASE_PATH,v,old)])
+        await self._commit(client,[write(self.lease_path,v,old)])
 
     def _capture_writes(self, report, capture_id, raw, operation, session):
         path=f'{ROOT}/captures/{capture_id}'
@@ -161,11 +169,11 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
         engine=report.get('bundleEngine',{})
         if len(engine.get('bundles',[]))>200:raise CloudStorageError('BUNDLE_LIMIT_EXCEEDED')
         for bundle in engine.get('bundles',[]):
-            rev=digest({'source':SOURCE['dom_id'],'bundle':bundle,'ruleset':engine['rulesetVersion']})
+            rev=digest({'source':self.source['dom_id'],'bundle':bundle,'ruleset':engine['rulesetVersion']})
             p=f"{ROOT}/bundleRevisions/{capture_id}_{bundle['bundleId']}"
             paths.append(p)
             writes.append(write(p,{'captureId':capture_id,'bundleId':bundle['bundleId'],
-                'sourceId':SOURCE['dom_id'],'rulesetVersion':engine['rulesetVersion'],
+                'sourceId':self.source['dom_id'],'rulesetVersion':engine['rulesetVersion'],
                 'state':bundle['state'],'reviewVersion':engine['reviewVersion'],
                 'revisionSignature':rev,'accountingActive':False,'proposalJson':canonical(bundle)},create=True))
         return path,writes,paths
@@ -177,27 +185,27 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
         return {'saved':True,'projectId':PROJECT_ID,'documentPath':f'{ROOT}/captures/{capture_id}',
                 'commitTime':doc['updateTime'],'duplicateSnapshot':reused,'resumedPendingJob':resumed,
                 'bundleRevisionPaths':[f"{ROOT}/bundleRevisions/{capture_id}_{b['bundleId']}" for b in r.get('bundleEngine',{}).get('bundles',[])],
-                'checkpointPath':CHECKPOINT_PATH,'historicalCursorAdvanced':False,'finalizedCursorAdvanced':False,
+                'checkpointPath':self.checkpoint_path,'historicalCursorAdvanced':False,'finalizedCursorAdvanced':False,
                 'deduplicationLayers':{'message':'OBSERVED_VERSION_SIGNATURE','attachment':'OBSERVED_VERSION_SIGNATURE',
                                       'binary':'WAITING_FOR_VERIFIED_BYTES','bundleRevision':'IMMUTABLE_SIGNATURE',
                                       'business':'WAITING_FOR_EXTRACTED_FIELDS'}}
 
     async def _finish(self, client, job, owner, token):
         v=values(job);report=json.loads(v['reportJson']);capture_id=v['captureId']
-        if (report.get('candidateSourceId')!=SOURCE['dom_id'] or report.get('sourceTitle')!=SOURCE['title']
+        if (report.get('candidateSourceId')!=self.source['dom_id'] or report.get('sourceTitle')!=self.source['title']
                 or v.get('operation') not in {'read_visible','bundle_review'}
                 or capture_id!=v['operation']+'_'+digest(report)
                 or v.get('jobPath')!=f'{ROOT}/jobs/{capture_id}'
                 or len(v['reportJson'].encode())>700_000):
             raise CloudStorageError('INVALID_PENDING_JOB')
-        manifest=artifact_manifest(report)
+        manifest=artifact_manifest(report,self.source)
         if type(v.get('nextArtifact')) is not int or not 0<=v['nextArtifact']<=len(manifest):
             raise CloudStorageError('INVALID_PENDING_JOB')
         lease,now=await self._lease(client,owner,token)
         if v.get('attempts',0)>=8:raise CloudStorageError('RECOVERY_ATTEMPTS_EXHAUSTED')
         attempted={**v,'attempts':v.get('attempts',0)+1,'lastAttemptAt':stamp(now),'leaseToken':token}
         lease_data=values(lease);lease_data['expiresAt']=stamp(now+timedelta(seconds=LEASE_SECONDS))
-        try:await self._commit(client,[write(v['jobPath'],attempted,job),write(LEASE_PATH,lease_data,lease)])
+        try:await self._commit(client,[write(v['jobPath'],attempted,job),write(self.lease_path,lease_data,lease)])
         except CloudStorageError:
             check,_=await self._get(client,v['jobPath'])
             if values(check or {}).get('attempts')!=attempted['attempts']:raise
@@ -210,23 +218,23 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
             writes=[write(path,data) for path,data in chunk]
             progress={**v,'nextArtifact':start+len(chunk),'leaseToken':token}
             lease_data=values(lease);lease_data['expiresAt']=stamp(now+timedelta(seconds=LEASE_SECONDS))
-            writes += [write(v['jobPath'],progress,job),write(LEASE_PATH,lease_data,lease)]
+            writes += [write(v['jobPath'],progress,job),write(self.lease_path,lease_data,lease)]
             try:await self._commit(client,writes)
             except CloudStorageError:
                 check,_=await self._get(client,v['jobPath'])
                 if values(check or {}).get('nextArtifact')!=progress['nextArtifact']:raise
             job,_=await self._get(client,v['jobPath']);v=values(job)
         lease,now=await self._lease(client,owner,token)
-        checkpoint,_=await self._get(client,CHECKPOINT_PATH)
+        checkpoint,_=await self._get(client,self.checkpoint_path)
         cp=values(checkpoint or {})
         path,writes,_=self._capture_writes(report,capture_id,v['reportJson'],v['operation'],v['sessionId'])
-        cp.update(sourceId=SOURCE['dom_id'],lastDurableCapturePath=path,
+        cp.update(sourceId=self.source['dom_id'],lastDurableCapturePath=path,
                   captureSequence=cp.get('captureSequence',0)+1,scannedCursor=cp.get('scannedCursor'),finalizedCursor=cp.get('finalizedCursor'),
                   coverage='RENDERED_ONLY',version=cp.get('version',0)+1)
-        writes.append(write(CHECKPOINT_PATH,cp,checkpoint,create=checkpoint is None))
+        writes.append(write(self.checkpoint_path,cp,checkpoint,create=checkpoint is None))
         writes.append(write(v['jobPath'],{**v,'state':'COMPLETED','nextArtifact':len(manifest),'leaseToken':token},job))
         lease_data=values(lease);lease_data.update(state='IDLE',owner=None,pendingJobPath=None,expiresAt=stamp(now))
-        writes.append(write(LEASE_PATH,lease_data,lease))
+        writes.append(write(self.lease_path,lease_data,lease))
         try:await self._commit(client,writes)
         except CloudStorageError:
             committed,_=await self._get(client,path)
@@ -239,11 +247,11 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
     async def save(self, report, *, operation, session_id):
         if operation=='structure':return await super().save(report,operation=operation,session_id=session_id)
         if operation not in {'read_visible','bundle_review'}:raise ValueError('Operation not permitted')
-        if report.get('candidateSourceId')!=SOURCE['dom_id'] or report.get('sourceTitle')!=SOURCE['title']:
+        if report.get('candidateSourceId')!=self.source['dom_id'] or report.get('sourceTitle')!=self.source['title']:
             raise CloudStorageError('SOURCE_MISMATCH')
         raw=canonical(report)
         if len(raw.encode())>700_000:raise CloudStorageError('CAPTURE_TOO_LARGE')
-        artifact_manifest(report)
+        artifact_manifest(report,self.source)
         capture_id=operation+'_'+digest(report)
         path=f'{ROOT}/captures/{capture_id}'
         owner=session_id+':'+str(uuid4())
@@ -268,12 +276,12 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
                 job_path=f'{ROOT}/jobs/{capture_id}'
                 old_job,_=await self._get(client,job_path)
                 if old_job:raise CloudStorageError('JOB_STATE_CONFLICT')
-                data={'jobPath':job_path,'captureId':capture_id,'sourceId':SOURCE['dom_id'],
+                data={'jobPath':job_path,'captureId':capture_id,'sourceId':self.source['dom_id'],
                       'reportJson':raw,'operation':operation,'sessionId':session_id,
                       'state':'PREPARED','nextArtifact':0,'leaseToken':token,'attempts':0}
                 lease,now=await self._lease(client,owner,token)
                 lease_data=values(lease);lease_data['pendingJobPath']=job_path
-                try:await self._commit(client,[write(job_path,data,create=True),write(LEASE_PATH,lease_data,lease)])
+                try:await self._commit(client,[write(job_path,data,create=True),write(self.lease_path,lease_data,lease)])
                 except CloudStorageError:
                     check,_=await self._get(client,job_path)
                     if not check or values(check).get('reportJson')!=raw:raise
@@ -283,6 +291,20 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
             finally:
                 try:await self._release(client,owner,token)
                 except CloudStorageError:pass  # Durable pending pointer survives; lease can expire.
+
+    async def latest_capture(self):
+        # Summary reads must not resume jobs or acquire leases for unchecked groups.
+        async with httpx.AsyncClient(transport=self.transport,timeout=20,trust_env=True,follow_redirects=False) as client:
+            checkpoint,_=await self._get(client,self.checkpoint_path)
+            path=values(checkpoint or {}).get('lastDurableCapturePath')
+            if not path:return None
+            if not path.startswith(ROOT+'/captures/'):raise CloudStorageError('INVALID_CHECKPOINT')
+            capture,_=await self._get(client,path)
+            if not capture:raise CloudStorageError('CHECKPOINT_CAPTURE_MISSING')
+            report=json.loads(values(capture)['reportJson'])
+            if report.get('candidateSourceId')!=self.source['dom_id'] or report.get('sourceTitle')!=self.source['title']:raise CloudStorageError('SOURCE_MISMATCH')
+            if values(capture).get('payloadSha256')!=digest(report):raise CloudStorageError('CAPTURE_IDENTITY_CONFLICT')
+            return {'report':report,'cloudStorage':self._receipt(capture,reused=True)}
 
     async def resume(self, *, session_id):
         owner=session_id+':'+str(uuid4())
@@ -294,15 +316,15 @@ class RecoverableFirestoreStore(FirestoreCaptureStore):
                     job,_=await self._get(client,pending)
                     if not job:raise CloudStorageError('PENDING_JOB_MISSING')
                     await self._finish(client,job,owner,token);resumed=True
-                checkpoint,_=await self._get(client,CHECKPOINT_PATH)
+                checkpoint,_=await self._get(client,self.checkpoint_path)
                 cp=values(checkpoint or {})
                 path=cp.get('lastDurableCapturePath')
-                if not path:return {'restored':False,'checkpoint':cp,'checkpointPath':CHECKPOINT_PATH}
+                if not path:return {'restored':False,'checkpoint':cp,'checkpointPath':self.checkpoint_path}
                 if not path.startswith(ROOT+'/captures/'):raise CloudStorageError('INVALID_CHECKPOINT')
                 capture,_=await self._get(client,path)
                 if not capture:raise CloudStorageError('CHECKPOINT_CAPTURE_MISSING')
                 report=json.loads(values(capture)['reportJson'])
-                if report.get('candidateSourceId')!=SOURCE['dom_id'] or report.get('sourceTitle')!=SOURCE['title']:raise CloudStorageError('SOURCE_MISMATCH')
+                if report.get('candidateSourceId')!=self.source['dom_id'] or report.get('sourceTitle')!=self.source['title']:raise CloudStorageError('SOURCE_MISMATCH')
                 if values(capture).get('payloadSha256')!=digest(report):raise CloudStorageError('CAPTURE_IDENTITY_CONFLICT')
                 return {'restored':True,'checkpoint':cp,'report':report,
                         'cloudStorage':self._receipt(capture,reused=True,resumed=resumed)}

@@ -4,21 +4,23 @@
 <h1>Zalo Local Agent</h1><p>Kết nối trình duyệt trên máy bạn với công cụ hỗ trợ MCP. Phiên chat cần cấu hình MCP riêng để sử dụng cầu nối.</p>
 <section aria-labelledby="dashboardTitle"><h2 id="dashboardTitle">Theo dõi hoạt động</h2><button id="play">▶ Play — tự cuộn và kiểm tra mới</button><button id="pause">⏸ Pause</button>
 <p><span id="runBadge" class="badge" role="status">Đang kết nối Agent…</span></p><p id="stageDetail">Chờ trạng thái.</p><button id="reconnect" hidden>Kết nối lại nhóm</button>
-<p><b>Nhóm:</b> <span id="sourceTitle">—</span></p>
+<h3>Chọn nhóm cần cập nhật</h3><div id="groupChoices"></div><p id="groupState" role="status">Đang tải danh sách nhóm từ Firestore…</p>
+<label>Thêm nhóm mới<input id="newGroupTitle" maxlength="200" placeholder="Nhập đúng tên nhóm trên Zalo"></label><button id="addGroup">Thêm và lưu nhóm</button>
+<p><b>Đang kiểm tra:</b> <span id="sourceTitle">—</span></p>
 <div class="dashboard-grid">
 <div class="metric"><small>Lần kiểm tra gần nhất</small><strong id="checkedTime">—</strong></div>
 <div class="metric"><small>Kiểm tra tiếp theo</small><strong id="nextCheck">—</strong></div>
 <div class="metric"><small>Số lần kiểm tra trong phiên</small><strong id="checkCount">0</strong></div>
 <div class="metric"><small>Lần lưu mới trong vòng Play</small><strong id="saveCount">0</strong></div>
 </div><p id="changeSummary">Chưa kiểm tra tin mới.</p><small id="connectionCountdown"></small>
-<h3>Bản dữ liệu Zalo đã lưu gần nhất</h3><p id="savedStatus" role="status">Chưa xác nhận bản dữ liệu Zalo. Kiểm tra kết nối Firestore không phải bản lưu tin nhắn.</p>
-<div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bản lưu</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bản lưu</small><strong id="savedImages">0</strong></div></div>
+<h3>Bảng tổng hợp dữ liệu Zalo</h3><p id="savedStatus" role="status">Chưa xác nhận bản dữ liệu Zalo. Kiểm tra kết nối Firestore không phải bản lưu tin nhắn.</p>
+<div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bảng tổng hợp</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bảng tổng hợp</small><strong id="savedImages">0</strong></div></div>
 <p id="savedPath" class="path"></p><p><small>Ảnh hiện được lưu dưới dạng thông tin tham chiếu, chưa có file ảnh gốc. Ngày xác nhận trên phiếu chưa được trích xuất.</small></p>
 <div id="captureMessages"><p>Chưa có nội dung đã lưu trong phiên. Play hoặc “Khôi phục lần đọc từ Firestore” để tải bản lưu trước.</p></div>
 <details><summary>Thông tin ảnh đã ghi nhận</summary><div id="captureImages"></div></details>
 <details open><summary>Hoạt động gần đây trong phiên</summary><ol id="activity"><li>Chưa chạy.</li></ol></details>
 </section>
-<section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
+<section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập Zalo thủ công. Tick các nhóm cần cập nhật ở trên; Agent tự chọn nhóm khi kết nối và khi Play. Đóng bảng tìm kiếm Zalo trước khi chạy.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
 <p id="state">Chưa kết nối</p><small>Play tự xác minh lại nhóm và gia hạn kết nối khi đang chạy. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra. Phiên điều khiển tối đa 8 giờ.</small>
 <hr><p id="monitorState" role="status"></p><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
@@ -119,6 +121,26 @@ document.getElementById('openRouter').onclick=()=>show('/api/local/router/dashbo
 document.getElementById('routerState').onclick=()=>show('/api/router/status');
 document.getElementById('mcpConfig').onclick=async()=>{try{const data=await api('/api/local/mcp-config','POST');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='zalo-mcp-config.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);result.textContent='Đã tải cấu hình MCP. Thêm vào ứng dụng MCP được hỗ trợ trên máy này; giữ Local Agent chạy.';}catch(e){result.textContent=e.message;}};
 (async()=>{try{const s=await api('/api/ai/settings');if(s.configured){document.getElementById('base').value=s.base_url;document.getElementById('model').value=s.model;document.getElementById('fallback').value=s.fallback_models.join(',');}await show('/api/status');}catch(e){result.textContent=e.message;}})();
+let groupUpdating=false;
+function renderGroups(groups){
+ const box=document.getElementById('groupChoices');box.replaceChildren();
+ for(const g of groups){const label=document.createElement('label');label.style.cssText='display:flex;gap:10px;align-items:center;margin:10px 0';
+ const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=g.selected;checkbox.value=g.id;checkbox.style.cssText='width:auto;margin:0';
+ const text=document.createElement('span');text.textContent=g.title;label.append(checkbox,text);box.append(label);
+ checkbox.onchange=()=>saveGroupSelection();}
+}
+async function loadGroups(){try{const data=await api('/api/groups');renderGroups(data.groups);document.getElementById('groupState').textContent='Chọn một hoặc nhiều nhóm. Play lần lượt kiểm tra các nhóm đã chọn; bảng tổng hợp dùng chung.';}catch(e){document.getElementById('groupState').textContent=e.message;}}
+async function saveGroupSelection(){
+ if(groupUpdating)return;groupUpdating=true;document.querySelectorAll('#groupChoices input').forEach(n=>n.disabled=true);
+ try{const selected=[...document.querySelectorAll('#groupChoices input:checked')].map(n=>n.value);const data=await api('/api/local/groups','POST',{selected});renderGroups(data.groups);document.getElementById('groupState').textContent='Đã lưu lựa chọn trên Firestore. Bấm Play để cập nhật nhóm đã chọn.';}
+ catch(e){await loadGroups();document.getElementById('groupState').textContent=e.message;}finally{groupUpdating=false;document.querySelectorAll('#groupChoices input').forEach(n=>n.disabled=false);}
+}
+document.getElementById('addGroup').onclick=async()=>{
+ const button=document.getElementById('addGroup');button.disabled=true;
+ try{const title=document.getElementById('newGroupTitle').value.trim();if(!title)throw new Error('Nhập tên nhóm trước khi lưu.');const data=await api('/api/local/groups','POST',{title});renderGroups(data.groups);document.getElementById('newGroupTitle').value='';document.getElementById('groupState').textContent='Đã thêm nhóm trên Firestore. Tick nhóm rồi bấm Play; Agent tự tìm và xác minh ID trong Zalo.';}
+ catch(e){document.getElementById('groupState').textContent=e.message;}finally{button.disabled=false;}
+};
+loadGroups();
 let displayedRevision=-1,monitorFetching=false;
 const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v*1000:v);return Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false});};
 function renderDashboard(s){
@@ -146,13 +168,13 @@ function renderDashboard(s){
 }
 function renderSaved(data){
  const messages=document.getElementById('captureMessages');messages.replaceChildren();
- for(const [i,m] of (data.messages||[]).entries()){
+ for(const [i,m] of (data.aggregate?.messages||data.messages||[]).entries()){
   const item=document.createElement('article');item.className='saved-item';const title=document.createElement('strong');title.textContent='Tin '+(i+1)+' · đã lưu';
   const text=document.createElement('p');text.textContent=m.text;item.append(title,text);messages.append(item);
  }
- if(!(data.messages||[]).length){const p=document.createElement('p');p.textContent='Bản lưu này chưa có tin nhắn văn bản.';messages.append(p);}
+ if(!(data.aggregate?.messages||data.messages||[]).length){const p=document.createElement('p');p.textContent='Bản lưu này chưa có tin nhắn văn bản.';messages.append(p);}
  const images=document.getElementById('captureImages');images.replaceChildren();
- for(const a of data.attachments||[]){for(const image of a.images||[]){const p=document.createElement('p');p.className='path';p.textContent=(image.domImageId||a.domContainerId)+' · '+(image.width||0)+' × '+(image.height||0)+' · '+(image.loaded?'đã hiển thị trong Zalo':'chưa tải xong trong Zalo')+' · chưa lưu file ảnh gốc';images.append(p);}}
+ for(const a of data.aggregate?.attachments||data.attachments||[]){for(const image of a.images||[]){const p=document.createElement('p');p.className='path';p.textContent=(image.domImageId||a.domContainerId)+' · '+(image.width||0)+' × '+(image.height||0)+' · '+(image.loaded?'đã hiển thị trong Zalo':'chưa tải xong trong Zalo')+' · chưa lưu file ảnh gốc';images.append(p);}}
 }
 async function refreshDashboard(){
  if(monitorFetching)return;monitorFetching=true;

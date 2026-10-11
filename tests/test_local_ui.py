@@ -22,6 +22,11 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
                         return report([('image','img-before'),('text','Xi măng ngày 11/10/2026 công trình A 2,5 tấn <script>unsafe()</script>'),('image','img-after')])
                     return await super().execute(op)
             control=Controller(browser=BundleBrowser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router(),capture_store=CaptureStore())
+            from material_agent.group_registry import GroupRegistry
+            from material_agent.recovery_store import RecoverableFirestoreStore
+            from firestore_emulation import FirestoreModel
+            cloud=FirestoreModel()
+            control.registry=GroupRegistry(RecoverableFirestoreStore(cloud.transport()))
             app=create_app('ui-test-key',control,port=port)
             server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
             task=asyncio.create_task(server.serve(sockets=[sock]))
@@ -40,6 +45,14 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
                         await expect(page.locator('#state')).to_contain_text('chờ kiểm tra')
                         self.assertEqual(page.url,origin+'/')
                         self.assertEqual(await page.evaluate('localStorage.length'),0)
+                        await expect(page.locator('#groupChoices input[type=checkbox]')).to_have_count(2)
+                        await page.locator('#newGroupTitle').fill('Nhóm mới thử nghiệm')
+                        await page.locator('#addGroup').click()
+                        await expect(page.locator('#groupChoices input[type=checkbox]')).to_have_count(3)
+                        await page.locator('#groupChoices input').nth(1).check()
+                        await expect(page.locator('#groupState')).to_contain_text('Đã lưu lựa chọn')
+                        loaded,_=await control.registry.load()
+                        self.assertTrue(loaded[0]['selected']);self.assertTrue(loaded[1]['selected'])
                         await page.locator('#open').click()
                         await expect(page.locator('#result')).to_contain_text('MANUAL_LOGIN_REQUIRED')
                         await page.locator('#connect').click()

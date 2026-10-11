@@ -18,9 +18,10 @@ def identity(kind, source, container):
     return kind + '_' + hashlib.sha256((source + '\0' + container).encode()).hexdigest()[:24]
 
 
-def build_bundles(report):
+def build_bundles(report, allowed_source=None):
+    allowed_source=allowed_source or SOURCE
     source = report.get('candidateSourceId')
-    if source != SOURCE['dom_id'] or report.get('sourceTitle') != SOURCE['title']:
+    if source != allowed_source['dom_id'] or report.get('sourceTitle') != allowed_source['title']:
         raise BundleInputError('Allowed source mismatch')
     if report.get('truncated') or any(m.get('textTruncated') for m in report.get('messages', [])):
         raise BundleInputError('Incomplete capture; reduce the rendered window before grouping')

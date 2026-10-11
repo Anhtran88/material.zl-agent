@@ -22,9 +22,15 @@ from .firestore_capture import CloudStorageError
 from .recovery_store import RecoverableFirestoreStore
 from .local_browser import LocalBrowser, SOURCE
 from .login import profile_path
+from .group_registry import GroupRegistry,defaults
 from .models import StopAutomation
 from .router_runtime import RouterRuntime
 
+
+class GroupSettings(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    title: str | None=Field(default=None,max_length=200)
+    selected: list[str] | None=Field(default=None,max_length=20)
 
 class GatewaySettings(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -66,6 +72,15 @@ class Controller:
         self.session_id=str(uuid4())
         self.audit_events=deque(maxlen=200)
         self.capture_store=capture_store or RecoverableFirestoreStore()
+        self.base_capture_store=self.capture_store
+        self.registry=GroupRegistry(self.capture_store) if isinstance(self.capture_store,RecoverableFirestoreStore) else None
+        self.groups=defaults()
+        self.multi_enabled=False
+        self.active_source=dict(SOURCE)
+        self.group_cache={}
+        self.group_reports={}
+        self.group_receipts={}
+        self.cycle_lock=asyncio.Lock()
         self.last_cloud_capture=None
         self.bundle_report=None
         self.bundle_capture_path=None
@@ -86,7 +101,7 @@ class Controller:
     def status(self):
         if self.clock()>=self.until and not self.monitor_running: self.enabled=False
         return {'auto_setup':self.auto_setup_status,'dashboard':self.dashboard(),'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
-                'scope':'one observed Zalo group; rendered text/image DOM only',
+                'scope':'selected user-authorized Zalo groups; observed text/image DOM only',
                 'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
                 'business_storage':'FIRESTORE_RECOVERABLE_CAPTURE',
                 'last_cloud_capture':self.last_cloud_capture,
@@ -100,9 +115,9 @@ class Controller:
         return self.auto_setup_status
 
     def dashboard(self):
-        report=self.saved_report or {}
+        report=self.combined_report()
         attachments=report.get('attachments',[])
-        return {'revision':self.data_revision,'sourceTitle':SOURCE['title'],
+        return {'revision':self.data_revision,'sourceTitle':self.active_source['title'],
             'connectionSecondsRemaining':max(0,int(self.until-self.clock())) if self.enabled else 0,
             'automaticReverification':self.monitor_running,
             'controlSecondsRemaining':max(0,int(min(self.control_until,self.monitor_authorized_until)-self.clock())) if self.monitor_running else None,
@@ -121,9 +136,25 @@ class Controller:
         self.monitor_state={**self.monitor_state,'state':state,'message':message,'nextCheckAt':None}
         self.activity.appendleft({'at':time.time(),'state':state,'message':message})
 
+    def combined_report(self):
+        messages={};attachments={}
+        for report in self.group_reports.values():
+            source=report.get('candidateSourceId')
+            for name,target in [('messages',messages),('attachments',attachments)]:
+                for item in report.get(name,[]): target[(source,item['domContainerId'])]=item
+        return {'messages':list(messages.values()),'attachments':list(attachments.values())}
+
     def record_capture(self, report, receipt):
         self.saved_report=report
         self.saved_receipt=receipt
+        previous=self.group_reports.get(report['candidateSourceId'],{})
+        merged=dict(report)
+        for name in ('messages','attachments'):
+            records={item['domContainerId']:item for item in previous.get(name,[])}
+            records.update({item['domContainerId']:item for item in report.get(name,[])})
+            merged[name]=list(records.values())
+        self.group_reports[report['candidateSourceId']]=merged
+        self.group_receipts[report['candidateSourceId']]=receipt
         self.data_revision+=1
 
     @staticmethod
@@ -135,7 +166,7 @@ class Controller:
                 records[(field,item['domContainerId'])]=json.dumps(value,sort_keys=True,ensure_ascii=False)
         return records
 
-    async def monitor_cycle(self):
+    async def _monitor_single_cycle(self):
         async with self.lock:
             if self.monitor_running and self.clock()>=self.monitor_authorized_until:
                 raise StopAutomation('Phiên điều khiển Agent đã hết. Khởi động lại Agent để tiếp tục.',code='CONTROL_SESSION_EXPIRED')
@@ -158,7 +189,7 @@ class Controller:
             changed=sum(k in previous and previous[k]!=v for k,v in current.items())
             if added or changed or not self.bundle_report:
                 self.stage('BUNDLING','Đang tạo đề xuất bundle từ nội dung mới…')
-                report={**report,'bundleEngine':build_bundles(report)}
+                report={**report,'bundleEngine':build_bundles(report,allowed_source=self.active_source)}
                 self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
                 receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
                 self.record_capture(report,receipt)
@@ -178,12 +209,46 @@ class Controller:
             self.activity.appendleft({'at':time.time(),'state':self.monitor_state['state'],
                 'message':self.monitor_state['message']+' · '+str(added)+' mục mới, '+str(changed)+' mục thay đổi'})
 
+    async def monitor_cycle(self):
+        if not self.multi_enabled: return await self._monitor_single_cycle()
+        async with self.cycle_lock:
+            selected=[g for g in self.groups if g['selected']]
+            if not selected:raise StopAutomation('Chọn ít nhất một nhóm.',code='NO_GROUP_SELECTED')
+            for group in selected:
+                if not self.monitor_running:break
+                async with self.lock:
+                    self.stage('SELECTING_GROUP','Đang mở nhóm: '+group['title'])
+                    source=await self.browser.select_group(group)
+                    if not group['dom_id']:
+                        self.groups=await self.registry.update(binding=(group['id'],source))
+                        group['dom_id']=source['dom_id']
+                    self.active_source=source
+                    cache=self.group_cache.get(group['id'])
+                    if cache is None:
+                        store=RecoverableFirestoreStore(self.base_capture_store.transport,source=source)
+                        restored=await store.resume(session_id=self.session_id)
+                        cache={'store':store,'report':restored.get('report'),
+                               'receipt':restored.get('cloudStorage')}
+                        self.group_cache[group['id']]=cache
+                        if restored.get('restored'):self.record_capture(cache['report'],cache['receipt'])
+                    self.capture_store=cache['store']
+                    self.bundle_report=cache['report']
+                    self.bundle_capture_path=(cache['receipt'] or {}).get('documentPath')
+                    self.last_cloud_capture=cache['receipt']
+                await self._monitor_single_cycle()
+                cache['report']=self.bundle_report
+                cache['receipt']=self.last_cloud_capture if self.bundle_report else None
+
     async def play(self):
         async with self.lock:
             if self.monitor_running: return self.status()
             if not self.status()['connected']: raise StopAutomation('Connect locally before Play')
             self.stage('RESTORING','Đang khôi phục mốc từ Firestore…')
-            restored=await self.capture_store.resume(session_id=self.session_id)
+            if self.registry:
+                self.groups,_=await self.registry.load()
+                if not any(g['selected'] for g in self.groups):raise StopAutomation('Chọn ít nhất một nhóm.',code='NO_GROUP_SELECTED')
+                self.multi_enabled=True
+            restored={'restored':False} if self.registry else await self.capture_store.resume(session_id=self.session_id)
             if restored.get('restored'):
                 self.record_capture(restored['report'],restored['cloudStorage'])
                 self.bundle_report=restored['report']
@@ -249,7 +314,7 @@ class Controller:
             try:
                 result=await self.browser.execute(operation)
                 if operation=='read_visible':
-                    result={**result,'bundleEngine':build_bundles(result)}
+                    result={**result,'bundleEngine':build_bundles(result,allowed_source=self.active_source)}
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
                 self.last_cloud_capture=receipt
                 if operation=='read_visible':
@@ -352,6 +417,17 @@ def create_app(token, controller=None, port=8765, clock=None):
         local_only(request)
         async with controller.lock:
             controller.enabled=False
+            if controller.registry and hasattr(controller.browser,'select_group'):
+                try:
+                    controller.groups,_=await controller.registry.load()
+                    selected=[g for g in controller.groups if g['selected']]
+                    if not selected:raise StopAutomation('Chọn ít nhất một nhóm.',code='NO_GROUP_SELECTED')
+                    group=selected[0]
+                    source=await controller.browser.select_group(group)
+                    if not group['dom_id']:controller.groups=await controller.registry.update(binding=(group['id'],source))
+                    controller.active_source=source
+                    controller.capture_store=RecoverableFirestoreStore(controller.base_capture_store.transport,source=source)
+                except CloudStorageError as exc:raise StopAutomation(str(exc),code=exc.code) from None
             result=await controller.browser.execute('verify')
             controller.until=controller.clock()+30*60
             controller.enabled=True
@@ -378,7 +454,7 @@ def create_app(token, controller=None, port=8765, clock=None):
     @app.get('/api/monitor/result')
     async def monitor_result():
         async with controller.lock:
-            return {**(controller.saved_report or {}),'cloudStorage':controller.saved_receipt,
+            return {**(controller.saved_report or {}),'aggregate':controller.combined_report(),'cloudStorage':controller.saved_receipt,
                     'monitor':controller.monitor_state}
 
     @app.post('/api/local/monitor/play')
@@ -450,6 +526,33 @@ def create_app(token, controller=None, port=8765, clock=None):
                 return {'cloudStorage':receipt,'kind':'CONNECTIVITY_TEST','containsZaloContent':False}
             except CloudStorageError as exc:
                 raise StopAutomation(str(exc)) from None
+
+    @app.get('/api/groups')
+    async def groups():
+        try:
+            if controller.registry:
+                loaded,_=await controller.registry.load()
+                controller.groups=loaded
+                for group in loaded:
+                    if group['dom_id'] and group['dom_id'] not in controller.group_reports:
+                        source={'title':group['title'],'dom_id':group['dom_id']}
+                        store=RecoverableFirestoreStore(controller.registry.store.transport,source=source)
+                        snapshot=await store.latest_capture()
+                        if snapshot:controller.record_capture(snapshot['report'],snapshot['cloudStorage'])
+            return {'groups':controller.groups}
+        except CloudStorageError as exc:raise StopAutomation(str(exc),code=exc.code) from None
+
+    @app.post('/api/local/groups')
+    async def save_groups(request:Request,settings:GroupSettings):
+        local_only(request)
+        await controller.pause()
+        async with controller.lock:
+            if not controller.registry:raise HTTPException(409,'Cloud group registry unavailable')
+            try:
+                controller.groups=await controller.registry.update(title=settings.title,selected=settings.selected)
+                return {'groups':controller.groups,'saved':True}
+            except ValueError as exc:raise HTTPException(422,str(exc)) from None
+            except CloudStorageError as exc:raise StopAutomation(str(exc),code=exc.code) from None
 
     @app.post('/api/local/auto-configure')
     async def auto_configure(request:Request):
