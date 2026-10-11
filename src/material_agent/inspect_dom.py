@@ -76,6 +76,9 @@ async def inspect():
             await context.close()
 
 def main():
+    raise SystemExit("Local business file export is disabled. Use Local Agent memory preview; Firebase setup pending.")
+
+def legacy_local_main():
     try:
         asyncio.run(inspect())
     except KeyboardInterrupt:

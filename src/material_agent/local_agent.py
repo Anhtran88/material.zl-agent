@@ -2,10 +2,10 @@
 import argparse
 import asyncio
 import hmac
-import json
 import secrets
 import time
 import webbrowser
+from collections import deque
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -42,18 +42,20 @@ class Controller:
         self.clock=clock or time.monotonic
         self.enabled=False; self.until=0; self.lock=asyncio.Lock()
         self.session_id=str(uuid4())
+        self.audit_events=deque(maxlen=200)
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
         return {'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
-                'milestone_1_accepted':False,'checkpoint_advanced':False}
+                'milestone_1_accepted':True,'checkpoint_advanced':False,
+                'business_storage':'CLOUD_NOT_CONFIGURED',
+                'business_data_persisted':False,'local_business_persistence':False}
 
     def audit(self, event, outcome):
-        folder=self.root/'logs'; folder.mkdir(parents=True,exist_ok=True)
-        with (folder/'bridge.jsonl').open('a',encoding='utf-8') as stream:
-            stream.write(json.dumps({'session_id':self.session_id,'time':time.time(),
-                                     'event':event,'outcome':outcome})+'\n')
+        # Operational metadata only, bounded memory until cloud ingestion is configured.
+        self.audit_events.append({'session_id':self.session_id,'time':time.time(),
+                                  'event':event,'outcome':outcome})
 
     async def action(self, operation):
         async with self.lock:
@@ -61,9 +63,7 @@ class Controller:
                 raise StopAutomation('Connect locally before browser reads')
             try:
                 result=await self.browser.execute(operation)
-                # Each read returns a private immutable capture for user review.
-                folder=self.root/'cache'/str(uuid4()); folder.mkdir(parents=True,exist_ok=False)
-                (folder/'capture.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+                # Preview only: no local capture, and no durable/cloud success claim.
                 self.audit(operation,'OK')
                 return result
             except Exception:

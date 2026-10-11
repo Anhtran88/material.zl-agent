@@ -40,10 +40,8 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
                         await expect(page.locator('#state')).to_have_text('Đã kết nối đọc nhóm')
                         await page.locator('#inspect').click()
                         await expect(page.locator('#result')).to_contain_text('structure')
-                        async with page.expect_download() as pending:
-                            await page.locator('#export').click()
-                        download=await pending.value
-                        self.assertEqual(download.suggested_filename,'zalo-agent-report.json')
+                        await expect(page.locator('#export')).to_be_disabled()
+                        await expect(page.locator('#result')).to_contain_text('structure')
                         await page.locator('#base').fill('http://127.0.0.1:20128/v1')
                         await page.locator('#key').fill('private-ui-key')
                         await page.locator('#saveAI').click()

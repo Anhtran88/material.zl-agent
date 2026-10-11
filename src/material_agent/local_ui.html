@@ -4,8 +4,8 @@
 <section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
 <p id="state">Chưa kết nối</p><small>Kết nối đọc có hiệu lực 30 phút. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra.</small>
-<hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="export">Tải báo cáo vừa đọc</button>
-<p><small>Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
+<hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="export" disabled>Lưu cloud: chờ cấu hình Firebase</button>
+<p><small>Dữ liệu chỉ xem tạm trong bộ nhớ, chưa lưu cloud; không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
 <section><h2>9Router</h2><p>Cấu hình cục bộ. Kiểm tra <code>/models</code> không gửi dữ liệu Zalo sang AI.</p>
 <label>API Base URL<input id="base" placeholder="http://127.0.0.1:20128/v1" autocomplete="off"></label>
 <label>Model<input id="model" placeholder="Chọn model sau khi kết nối provider" autocomplete="off"></label>
@@ -16,20 +16,19 @@
 <section><h2>Cầu nối MCP</h2><p>Chỉ dùng với ứng dụng MCP trên cùng máy Windows. Cài Local Agent chưa tự kết nối phiên chat cloud.</p><button id="mcpConfig">Tải cấu hình MCP của máy này</button></section>
 <section><h2>Kết quả</h2><pre id="result">Sẵn sàng</pre></section>
 <script>
-let token=location.hash.slice(1);history.replaceState(null,'',location.pathname);let capture=null;
+let token=location.hash.slice(1);history.replaceState(null,'',location.pathname);
 const result=document.getElementById('result');
 async function api(path,method='GET',body){
  if(!token)throw new Error('Trang chưa được ghép nối. Khởi động lại Local Agent để mở trang có mã kết nối.');
  const r=await fetch(path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
  const data=await r.json();if(!r.ok)throw new Error(data.detail || 'Thao tác dừng');return data;
 }
-async function show(path,method='GET',body,save=false){try{const data=await api(path,method,body);result.textContent=JSON.stringify(data,null,2);if(save)capture=data;const s=await api('/api/status');document.getElementById('state').textContent=s.connected?'Đã kết nối đọc nhóm':'Đã ngắt / chờ kiểm tra thủ công';}catch(e){result.textContent=e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';}}
+async function show(path,method='GET',body,save=false){try{const data=await api(path,method,body);result.textContent=JSON.stringify(data,null,2);const s=await api('/api/status');document.getElementById('state').textContent=s.connected?'Đã kết nối đọc nhóm':'Đã ngắt / chờ kiểm tra thủ công';}catch(e){result.textContent=e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';}}
 for(const [id,path] of [['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
 document.getElementById('status').onclick=()=>show('/api/status');
 document.getElementById('saveAI').onclick=async()=>{const settings={base_url:document.getElementById('base').value,model:document.getElementById('model').value,fallback_models:document.getElementById('fallback').value.split(',').map(x=>x.trim()).filter(Boolean),api_key:document.getElementById('key').value};document.getElementById('key').value='';await show('/api/local/ai/settings','POST',settings);};
 document.getElementById('openRouter').onclick=()=>show('/api/local/router/dashboard','POST');
 document.getElementById('routerState').onclick=()=>show('/api/router/status');
-document.getElementById('export').onclick=()=>{if(!capture){result.textContent='Kiểm tra DOM hoặc đọc hiển thị trước.';return;}const url=URL.createObjectURL(new Blob([JSON.stringify(capture,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='zalo-agent-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 document.getElementById('mcpConfig').onclick=async()=>{try{const data=await api('/api/local/mcp-config','POST');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='zalo-mcp-config.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);result.textContent='Đã tải cấu hình MCP. Thêm vào ứng dụng MCP được hỗ trợ trên máy này; giữ Local Agent chạy.';}catch(e){result.textContent=e.message;}};
 (async()=>{try{const s=await api('/api/ai/settings');if(s.configured){document.getElementById('base').value=s.base_url;document.getElementById('model').value=s.model;document.getElementById('fallback').value=s.fallback_models.join(',');}await show('/api/status');}catch(e){result.textContent=e.message;}})();
 </script></html>

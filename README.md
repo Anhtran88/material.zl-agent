@@ -1,6 +1,8 @@
 # Zalo Material Delivery Manager
 
-Read ARCHITECTURE.md and IMPLEMENTATION_PLAN.md first. M1 is a supervised, fail-closed read PoC accepted under the user-approved reduced scope in IMPLEMENTATION_PLAN.md. No bundle/accounting/AI/dashboard implementation yet.
+Read ARCHITECTURE.md and IMPLEMENTATION_PLAN.md first.
+
+**Current storage direction:** Firestore + Firebase Storage for all business data. Firebase setup is pending; Local Agent currently previews data in memory only, with no automatic report/log files or report download. Legacy PoC/export launchers below are disabled; their instructions are historical. See schemas/firestore.md and docs/FIREBASE_SETUP.md. M1 is a supervised, fail-closed read PoC accepted under the user-approved reduced scope in IMPLEMENTATION_PLAN.md. No bundle/accounting/AI/dashboard implementation yet.
 
 Windows Python 3.12+:
 

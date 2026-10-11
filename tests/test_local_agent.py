@@ -64,7 +64,11 @@ class LocalAgentTests(unittest.TestCase):
     def test_enable_read_and_disconnect(self):
         self.connect()
         self.assertEqual(self.client.post('/api/read-visible',headers=self.auth).status_code,200)
-        self.assertEqual(len(list(Path(self.tmp.name).glob('cache/*/capture.json'))),1)
+        self.assertFalse((Path(self.tmp.name)/'cache').exists())
+        self.assertFalse((Path(self.tmp.name)/'logs').exists())
+        state=self.controller.status()
+        self.assertEqual(state['business_storage'],'CLOUD_NOT_CONFIGURED')
+        self.assertFalse(state['business_data_persisted'])
         self.client.post('/api/disconnect',headers=self.auth)
         self.assertTrue(self.browser.closed)
         self.assertEqual(self.client.post('/api/structure',headers=self.auth).status_code,409)
@@ -74,7 +78,8 @@ class LocalAgentTests(unittest.TestCase):
         self.assertEqual(response.status_code,409)
         self.assertNotIn('secret_should_not_leak',response.text)
         self.assertFalse(self.controller.enabled)
-        self.assertNotIn('secret_should_not_leak',(Path(self.tmp.name)/'logs/bridge.jsonl').read_text())
+        self.assertFalse((Path(self.tmp.name)/'logs').exists())
+        self.assertNotIn('secret_should_not_leak',str(list(self.controller.audit_events)))
     def test_read_session_expires(self):
         self.connect(); self.now[0]+=1801
         self.assertEqual(self.client.post('/api/read-visible',headers=self.auth).status_code,409)

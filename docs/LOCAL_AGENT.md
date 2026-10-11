@@ -1,5 +1,7 @@
 # Local Agent + 9Router setup
 
+Current cloud-only policy supersedes historical capture/export instructions below: business captures and operation logs are memory-only, report downloads are disabled, Firebase ingestion is not configured. Zalo profile and operational credentials/runtime remain local. See FIREBASE_SETUP.md.
+
 This is a locally operated integration extension requested during M1. It does not advance the M1 acceptance gate or implement M2–M9. The bridge is functional for compatible local MCP clients; the current cloud chat has no tool attaching to the user's Windows machine. No public tunnel, arbitrary desktop control or credential transfer is provided.
 
 ## Windows setup

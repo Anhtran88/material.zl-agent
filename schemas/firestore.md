@@ -1,0 +1,50 @@
+# Cloud Firestore schema — authoritative design
+
+Supersedes schema.sql (historical relational reference only). All business records are tenant-scoped under `tenants/{tenantId}`. IDs and references cannot cross a tenant. Server validates ownership, allowed source, payload schema/size and state transitions; Firestore has no foreign-key or unique constraints. Authentication is Firebase Auth, not a shared service-account key on Windows. Backend uses scoped IAM/workload identity; Admin SDK bypasses client rules and must enforce tenant authorization itself.
+
+| Collection under tenant | Main fields / identity |
+|---|---|
+| members | document ID = Firebase UID; role = owner/reviewer/viewer; provisioning backend only |
+| agents | registered device identity, assigned sources, heartbeat, status; no browser sessions or provider secrets |
+| sources | Zalo account reference, owner; no credentials |
+| conversations | sourceId, externalId, exact title, allowed, version |
+| captures | captureId/idempotency key, agentId, conversationId, manifest, chunk status, receivedAt, committedAt |
+| messages | conversationId, captureId, externalId nullable, candidate DOM IDs, fingerprint/version, full rawText, rawMetadata, capturedAt, sender nullable, messageTimestamp nullable |
+| attachments | message/capture association, externalIdentity nullable, kind, originalName, fileId nullable, state |
+| files | content hash when bytes exist, bucket/object path, immutable object generation, sizeBytes, mediaType, retentionState; no public download token or signed URL |
+| bundles | conversationId, createdAt, activeRevisionId nullable, activeDeliveryId nullable, version |
+| bundleRevisions | bundleId, revision, fingerprint, confidence, rulesetVersion, state; immutable evidence membership in separate collections |
+| bundleMessages / bundleAttachments | revisionId, evidenceId, reason; deterministic pair document ID |
+| documents / documentPages | attachmentId, fileId, role, dates/date originals; page number, textContent, evidence locations |
+| extractions / extractionEvidence | revisionId, fieldName, original/normalized values, unit, confidence, method, layer; exactly one message span or document page/location |
+| materials / projects / suppliers | tenant-scoped dictionaries, names/codes, normalization version |
+| deliveries | bundleId, revisionId, projectId, supplierId, confirmedDeliveryDate (YYYY-MM-DD, date-only), confirmation original/evidence, chatStatedDate separately, documentNumber, validationStatus, accountingActive, pdfFileId |
+| deliveryLines | deliveryId, materialId, specification, unit; decimal strings for requested/ordered/delivered/received/accepted/returned quantities, weight, evidence refs |
+| validationIssues / reviewAudit | conflicts, evidenceIds, resolution actor/server timestamps, immutable audit events |
+| checkpoints | document ID = conversationId; scannedCursor, finalizedCursor, version, lastCaptureId; no assertion of complete history without verified cursor |
+| processedMessages / processedAttachments / processedBundles | tenant-scoped deterministic identity, committed revision and terminal reason |
+| runs / jobs / agentLogs / aiRequestLogs | state, attempts, nextRetryAt, ownerAgentId, leaseExpiresAt, fencingToken, version; safe metadata only |
+| publicationOutbox | revisionId, fileId, immutable Storage path/generation, state, idempotency key |
+| identityReservations | hashed tenant+source+external ID or strong identity key; target ID, rulesetVersion; transaction create, never weak fingerprint as automatic discard |
+
+Full message text is retained separately from extracted dates/material/project/quantity/unit; multiple entries keep separate source spans. Bounded capture truncation stays explicit, never silently accepted as complete. Oversize message/page text moves into private Storage as UTF-8 with reference, byte count and integrity metadata; do not truncate to fit Firestore's 1 MiB document limit. Documents contain bounded metadata, not binary/base64 images or unbounded growing arrays. Membership/evidence/line records are separate documents; page chunks and manifests support large uploads without one giant transaction.
+
+Decimal strings are calculated server-side with Decimal, not JS floating point or an LLM. Server timestamps are capture/audit times only; they cannot supply the slip confirmation date. Date-only confirmation is distinct from slip issue date, chat-stated date and message timestamp.
+
+# Concurrency and deduplication
+
+Five layers remain: source message identity, attachment identity, binary identity when available, immutable bundle revision identity, reviewable business duplicate candidates. Hash/identity reservations are tenant-scoped, avoid cross-tenant existence leaks. Unstable IDs or missing sender/time produce candidates requiring review, never irreversible discard.
+
+A backend transaction claims one job with version comparison, server-clock lease expiry and incremented fencing token. Every subsequent write validates token+owner+unexpired lease. A stale agent cannot commit after another agent takes over. Clients never choose their own tenant or promote accounting state. Each bundle's activeDeliveryId pointer is changed transactionally with the revision; this replaces SQLite's partial unique index. Reports query the active pointer/current projection, not arbitrary client-written accountingActive flags.
+
+# Ingestion, checkpoints and Storage saga
+
+Capture arrives over authenticated HTTPS to an ingestion backend using a stable captureId and bounded chunk sequence. Validate source allowlist server-side; store chunks idempotently, then commit manifest only after all expected chunks exist. ACK includes durable capture identity, not merely successful local DOM read. Lost ACK causes retry of the same captureId. scannedCursor changes only after durable manifest completion. finalizedCursor changes only after safely terminal contiguous processing; unverified history cannot invent a cursor. Backend sends realtime listener updates after cloud commit.
+
+Storage upload uses an immutable tenant/job/object key and generation preconditions. Verify content metadata and expected bytes when actual bytes are processed; never pretend blob DOM metadata is an original file. PREPARED/outbox transaction does not activate accounting. Verify uploaded object generation and publication artifacts, then transactionally activate the revision and advance eligible checkpoint. Firestore+Storage is a saga, not one atomic transaction. Recovery checks existing generations/manifests; no blind overwrite or duplicate accounting. Expired orphan staging objects are cleaned server-side only after lease/reference checks. Backups/PITR and lifecycle/retention are cloud policies, not SQLite/OneDrive copies.
+
+# Realtime clients and persistence
+
+Web/mobile clients use Firebase Auth and tenant-scoped, bounded Firestore listeners with pagination and unsubscribe. Backend performs all business writes; owner/reviewer actions use validated endpoints with revision preconditions. Client rules stay deny-all until member read rules are tested in the Firebase Emulator Suite for cross-tenant denial, revoked users and unauthenticated requests. Storage reads use authorized backend streaming or short-lived in-memory access; no public links in business records.
+
+No local SQLite, capture JSON, offline outbox or business log persistence. Firestore client persistent offline caching is disabled (memory-only). Network loss pauses durable ingestion; keep only bounded pending data in RAM, no successful commit/checkpoint claim. Closing the agent loses unacknowledged RAM data, requiring operator recapture; history completeness was waived but data loss must stay explicit. OS/browser managed caches, swap and downloaded program files are not eliminated by this application policy. Zalo credential profile, local bridge credentials and 9Router runtime/config remain device-local operational dependencies; never replicate them to Firestore. Strict zero browser disk writes would require an ephemeral Zalo browser and manual login on every restart, which is a separate operating-mode change.

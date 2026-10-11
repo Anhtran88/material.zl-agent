@@ -1,3 +1,4 @@
+-- SUPERSEDED: historical reference only. Authoritative target: schemas/firestore.md.
 -- Design blueprint. Migrations are introduced in M3/M7; not an active M1 DB.
 PRAGMA foreign_keys=ON;
 CREATE TABLE zalo_source(id TEXT PRIMARY KEY, account_reference TEXT NOT NULL);

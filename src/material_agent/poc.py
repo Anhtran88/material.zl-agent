@@ -54,6 +54,9 @@ async def run(args):
             await context.close()
 
 def main():
+    raise SystemExit("Local business file export is disabled. Use Local Agent memory preview; Firebase setup pending.")
+
+def legacy_local_main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
     parser.add_argument('--message')
