@@ -21,7 +21,7 @@ Schema executed in an in-memory SQLite database; foreign keys enabled, active-re
 - No live network audit proving absence of forbidden Zalo mutations. Reading may mark conversations read as a platform side effect.
 - SHA-256 exists in runner, but corrupt-file format validation remains pending for actual sample attachments.
 - Exact group ID, fixture ground truth and link/title association not verified.
-- GitHub connector returned 404 twice; `git ls-remote` failed connecting to configured proxy. No push/PR/remote commit claimed.
+- Earlier GitHub 404/proxy failures resolved on 2026-10-11: official repository is accessible with push permission. Remote initial commit retained; architecture and PoC commits prepared on main. Remote publication is verified separately after push.
 
 ## Live operator procedure
 Verify repository access through the connected GitHub account. On the Windows machine install dependencies/browser, manually inspect DOM and adapt the centralized adapter contract, configure exact source ID/title without secrets. Use an existing membership; do not auto-join. Prepare a labeled bounded timeline with mixed attachments and expected counts. Run PoC, compare local timeline manifest to ground truth, select one attachment and compare downloaded bytes/hash to known evidence. Exercise security/logout/drift and duplicate-title cases; locally audit permitted interactions and network behavior without recording credentials. Record Windows/browser/Zalo versions, dataset coverage, counts, checksums, failures and approval. Until all M1 gates pass, no M2 implementation.

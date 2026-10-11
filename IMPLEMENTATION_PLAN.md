@@ -24,6 +24,6 @@ Design documents are written before implementation. Scope now: M1 only; no AI, d
 7. Push design and M1 to official repository when access is available. Do not substitute a different repository.
 
 ## Current gates
-Repository access blocked: GitHub connector 404; executor proxy connection refused. Live Zalo login unavailable and chat.zalo.me not on current environment allowlist. Therefore M1 cannot be marked accepted from simulated tests. Milestone 2 must not start. No business checkpoint is advanced by PoC.
+Repository access restored on 2026-10-11; initial remote main history preserved. Live Zalo login unavailable and chat.zalo.me not on current environment allowlist. Therefore M1 cannot be marked accepted from simulated tests. Milestone 2 must not start. No business checkpoint is advanced by PoC.
 
 Offline M1 validation: 17/17 contract/schema tests passed (2026-10-11). See docs/MILESTONE_1_REPORT.md. Search/scroll and actual selector mapping remain live integration work, so gate is NOT ACCEPTED.
