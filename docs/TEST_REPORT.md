@@ -1,0 +1,2 @@
+
+2026-10-11 Play/Pause extension: 112 tests passed, including the pinned real 9Router server. New coverage: change-only saves, edited text, order-only changes, single-worker Play/Pause, fail-stop behavior, connection expiry, actual Chromium conversation-scroller isolation, missing-scroller pause, bounded catch-up and missing-anchor stop. Actual Windows/Zalo auto-scroll remains pending live acceptance.

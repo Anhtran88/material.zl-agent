@@ -21,6 +21,22 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         await self.page.set_content(HTML)
     async def asyncTearDown(self):
         await self.browser.close(); await self.p.stop()
+    async def test_scroll_only_verified_timeline(self):
+        await self.page.evaluate("""() => {
+          const timeline=document.getElementById('timeline');
+          timeline.style.cssText='overflow-y:auto;height:60px';
+          const spacer=document.createElement('div');spacer.style.height='500px';timeline.append(spacer);
+          const sidebar=document.getElementById('conversationList');
+          sidebar.style.cssText='overflow-y:auto;height:10px';
+        }""")
+        result=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})
+        self.assertTrue(result['atBottom'])
+        self.assertGreater(await self.page.eval_on_selector('#timeline','n=>n.scrollTop'),0)
+        self.assertEqual(await self.page.eval_on_selector('#conversationList','n=>n.scrollTop'),0)
+    async def test_missing_scroller_pauses(self):
+        with self.assertRaises(Exception):
+            await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})
+
     async def test_allowed_scope_whitespace_and_raw_limitations(self):
         result=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_visible'})
         self.assertEqual(result['textContainers'],1); self.assertEqual(result['imageContainers'],1)

@@ -56,3 +56,11 @@ Tools: `zalo_status`, `zalo_inspect_dom`, `zalo_read_visible`, `zalo_disconnect`
 Reviewed npm README/CLI/hooks/custom-server and upstream management route implementation, pinned 9router 0.5.99 (npm dist integrity in lockfile). Upstream: https://github.com/decolua/9router ; registry: https://www.npmjs.com/package/9router . Node archive hash from https://nodejs.org/dist/v24.19.0/SHASUMS256.txt . Direct standalone launch is tested below; it is an integration choice using the shipped artifact, not the default upstream CLI startup flow.
 
 Tests cover loopback authentication, Host/Origin checks, local-only enable, expiry, revocation, input/output redaction, redirect refusal, rate/retry limits, source scoping and Chromium offline DOM fixtures. A real stdio MCP client exercises the bridge through a live authenticated loopback API with a fake browser port. Optional real 9Router integration starts the shipped server, bootstraps owner/key/settings, probes the catalog with no provider and restarts preserving the key. Those tests do not establish live Zalo coverage or Windows acceptance.
+
+### Automatic Play/Pause
+
+After opening Zalo and connecting the allowed group, press **Play — tự cuộn và kiểm tra mới**. The backend restores the saved Firestore snapshot, scrolls the verified conversation to its bottom and checks every 15 seconds. Newly observed or edited records are saved; unchanged polls report no change in the checked bottom window without writing another capture. **Pause** waits for a current save to finish. Closing the control-page tab does not stop the backend; disconnecting, stopping the Agent or expiry of the 30-minute connection does. Reconnect then press Play after expiry. Source/UI/cloud errors pause the worker.
+
+Play attempts bounded catch-up to the saved DOM anchor after downtime; an unlocatable anchor or excessive gap pauses the worker. Slip-date extraction is not added by Play. Business data remains cloud-only.
+
+Update: Play now traverses older rendered windows until the last saved DOM anchor is found, then returns to the bottom. Catch-up is bounded to 80 scroll steps and capture size limits; missing anchors or an excessive gap pause without advancing the checkpoint. DOM anchors remain provisional identities; this is not proof of complete server history.

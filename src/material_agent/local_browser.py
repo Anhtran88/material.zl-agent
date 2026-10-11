@@ -30,6 +30,22 @@ DOM_PROBE = r'''({source, operation}) => {
     textContainers:texts.length, imageContainers:images.length,
     checkpointAdvanced:false, historicalCoverage:false, filesCoverage:false};
   if (operation === 'verify') return base;
+  if (['scroll_latest','bottom_status','scroll_previous'].includes(operation)) {
+    // Derive the conversation scroller from verified message nodes, never the sidebar.
+    const nodes=[...texts,...images];
+    const candidates=[];
+    for(let n=nodes[0].parentElement;n && n!==document.body;n=n.parentElement) {
+      const overflow=getComputedStyle(n).overflowY;
+      if (['auto','scroll'].includes(overflow) && n.scrollHeight>n.clientHeight &&
+          nodes.every(c=>n.contains(c)) && !n.querySelector('[data-id="div_TabMsg_ThrdChItem"]')) candidates.push(n);
+    }
+    if(candidates.length!==1) throw new Error('PAUSE_USER: conversation scroller ambiguous');
+    const n=candidates[0];
+    if(operation === 'bottom_status') return {atBottom:n.scrollHeight-n.clientHeight-n.scrollTop<=3};
+    if(operation === 'scroll_previous') { n.scrollTop=Math.max(0,n.scrollTop-n.clientHeight*0.75); return {atTop:n.scrollTop<=3}; }
+    n.scrollTop=n.scrollHeight;
+    return {atBottom:n.scrollHeight-n.clientHeight-n.scrollTop<=3};
+  }
   const attrs = ['id','class','data-id','data-component','anim-data-id','role'];
   const describe = n => ({tag:n.tagName.toLowerCase(),
     attributes:Object.fromEntries(attrs.filter(a=>n.hasAttribute(a)).map(a=>[a,n.getAttribute(a)])),
@@ -99,7 +115,7 @@ class LocalBrowser:
             raise StopAutomation('Browser unavailable; manual intervention required') from None
 
     async def execute(self, operation):
-        if operation not in {'verify', 'structure', 'read_visible'}:
+        if operation not in {'verify', 'structure', 'read_visible', 'scroll_latest', 'bottom_status', 'scroll_previous'}:
             raise StopAutomation('Operation is not permitted')
         if self.page is None or self.page.is_closed():
             raise StopAutomation('Open the local browser first')
@@ -110,6 +126,51 @@ class LocalBrowser:
             return await self.page.evaluate(DOM_PROBE, {'source': SOURCE, 'operation': operation})
         except Exception:
             raise StopAutomation('Source/UI/security verification failed; reconnect locally after checking browser') from None
+
+    async def read_latest(self, anchor=None):
+        import asyncio
+        # Revalidate the source after every movement and wait for lazy rendering.
+        for _ in range(8):
+            await self.execute('scroll_latest')
+            await asyncio.sleep(0.5)
+            state=await self.execute('scroll_latest')
+            if state['atBottom']:
+                await asyncio.sleep(0.5)
+                if not (await self.execute('bottom_status'))['atBottom']: continue
+                result=await self.execute('read_visible')
+                break
+        else:
+            raise StopAutomation('Conversation did not settle at bottom; paused')
+        if not anchor or any(n['domContainerId']==anchor for n in result['messages']+result['attachments']):
+            return {**result,'navigation':'verified conversation scrolled to bottom','historicalCoverage':False}
+        collected={n['domContainerId']:n for n in result['messages']+result['attachments']}
+        order=[n['domContainerId'] for n in sorted(collected.values(),key=lambda n:n['renderedOrder'])]
+        found=False
+        for _ in range(80):
+            movement=await self.execute('scroll_previous')
+            await asyncio.sleep(0.4)
+            window=await self.execute('read_visible')
+            entries=sorted(window['messages']+window['attachments'],key=lambda n:n['renderedOrder'])
+            fresh=[n['domContainerId'] for n in entries if n['domContainerId'] not in collected]
+            order=fresh+order
+            collected.update({n['domContainerId']:n for n in entries})
+            if sum('text' in n for n in collected.values())>200 or sum('kind' in n for n in collected.values())>200:
+                raise StopAutomation('Catch-up exceeds capture limit; paused without advancing checkpoint')
+            if anchor in collected:
+                found=True;break
+            if movement['atTop']:
+                await asyncio.sleep(0.6)
+        if not found:
+            raise StopAutomation('Saved message anchor not found within bounded catch-up; paused without advancing checkpoint')
+        # Return the operator to the bottom and include arrivals during catch-up.
+        latest=await self.read_latest()
+        for n in sorted(latest['messages']+latest['attachments'],key=lambda n:n['renderedOrder']):
+            if n['domContainerId'] not in collected: order.append(n['domContainerId'])
+            collected[n['domContainerId']]=n
+        for i,key in enumerate(order): collected[key]={**collected[key],'renderedOrder':i}
+        return {**latest,'messages':[collected[k] for k in order if 'text' in collected[k]],
+            'attachments':[collected[k] for k in order if 'kind' in collected[k]],
+            'navigation':'bottom plus bounded catch-up to saved DOM anchor','historicalCoverage':False}
 
     async def close(self):
         context, playwright = self.context, self.playwright

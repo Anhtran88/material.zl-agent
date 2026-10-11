@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import hmac
+import json
 import secrets
 import time
 import webbrowser
@@ -68,15 +69,89 @@ class Controller:
         self.last_cloud_capture=None
         self.bundle_report=None
         self.bundle_capture_path=None
+        self.monitor_task=None
+        self.monitor_wake=asyncio.Event()
+        self.monitor_running=False
+        self.monitor_sequence=0
+        self.monitor_state={"state":"IDLE"}
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
-        return {'connected':self.enabled,'session_id':self.session_id,
+        return {'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
                 'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
                 'business_storage':'FIRESTORE_RECOVERABLE_CAPTURE',
                 'last_cloud_capture':self.last_cloud_capture,
                 'business_data_persisted':self.last_cloud_capture is not None,'local_business_persistence':False}
+
+    @staticmethod
+    def observations(report):
+        records={}
+        for field in ('messages','attachments'):
+            for item in report.get(field,[]):
+                value={k:v for k,v in item.items() if k!='renderedOrder'}
+                records[(field,item['domContainerId'])]=json.dumps(value,sort_keys=True,ensure_ascii=False)
+        return records
+
+    async def monitor_cycle(self):
+        async with self.lock:
+            if not self.status()['connected']:
+                raise StopAutomation('Connection expired; reconnect locally')
+            prior=(self.bundle_report or {})
+            entries=prior.get('messages',[])+prior.get('attachments',[])
+            anchor=max(entries,key=lambda n:n.get('renderedOrder',-1))['domContainerId'] if entries else None
+            report=await self.browser.read_latest(anchor=anchor)
+            current=self.observations(report)
+            previous=self.observations(self.bundle_report or {})
+            added=sum(k not in previous for k in current)
+            changed=sum(k in previous and previous[k]!=v for k,v in current.items())
+            if added or changed or not self.bundle_report:
+                report={**report,'bundleEngine':build_bundles(report)}
+                receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
+                self.bundle_report=report
+                self.bundle_capture_path=receipt['documentPath']
+                self.last_cloud_capture=receipt
+                self.monitor_sequence+=1
+            overlap=bool(current.keys() & previous.keys())
+            self.monitor_state={'state':'SAVED' if added or changed else 'NO_CHANGE',
+                'sequence':self.monitor_sequence,'overlapWithSavedWindow':overlap,
+                'checkedAt':time.time(),'newObservedContainers':added,'changedObservedContainers':changed,
+                'coverage':'latest rendered window; historical gap not verified',
+                'message':'Đã lưu dữ liệu mới/thay đổi' if added or changed else 'Không có thay đổi trong vùng cuối đã kiểm tra'}
+
+    async def play(self):
+        async with self.lock:
+            if self.monitor_running: return self.status()
+            if not self.status()['connected']: raise StopAutomation('Connect locally before Play')
+            restored=await self.capture_store.resume(session_id=self.session_id)
+            if restored.get('restored'):
+                self.bundle_report=restored['report']
+                self.last_cloud_capture=restored['cloudStorage']
+                self.bundle_capture_path=self.last_cloud_capture['documentPath']
+            self.monitor_running=True
+            self.monitor_wake.clear()
+            self.monitor_state={'state':'CHECKING'}
+            self.monitor_task=asyncio.create_task(self.monitor_loop())
+            return self.status()
+
+    async def monitor_loop(self):
+        try:
+            while self.monitor_running:
+                await self.monitor_cycle()
+                try: await asyncio.wait_for(self.monitor_wake.wait(),timeout=15)
+                except asyncio.TimeoutError: pass
+        except Exception:
+            self.enabled=False
+            self.monitor_state={'state':'PAUSED_ERROR','message':'Agent dừng: kiểm tra trình duyệt, nguồn, kết nối Firestore rồi kết nối lại.'}
+        finally:
+            self.monitor_running=False
+
+    async def pause(self):
+        self.monitor_running=False
+        self.monitor_wake.set()
+        if self.monitor_task: await self.monitor_task
+        self.monitor_task=None
+        if self.monitor_state.get('state')!='PAUSED_ERROR': self.monitor_state={**self.monitor_state,'state':'PAUSED'}
 
     def audit(self, event, outcome):
         # Operational metadata only, bounded memory until cloud ingestion is configured.
@@ -128,6 +203,7 @@ def create_app(token, controller=None, port=8765, clock=None):
             yield
         finally:
             controller.enabled=False
+            await controller.pause()
             try:
                 await controller.browser.close()
             finally:
@@ -179,6 +255,7 @@ def create_app(token, controller=None, port=8765, clock=None):
     @app.post('/api/local/browser')
     async def browser(request:Request):
         local_only(request)
+        await controller.pause()
         async with controller.lock:
             controller.enabled=False
             await controller.browser.start()
@@ -200,6 +277,7 @@ def create_app(token, controller=None, port=8765, clock=None):
     async def disconnect():
         # Immediate cancellation signal, then wait for any synchronous DOM read to finish.
         controller.enabled=False
+        await controller.pause()
         async with controller.lock:
             controller.until=0
             await controller.browser.close()
@@ -211,6 +289,26 @@ def create_app(token, controller=None, port=8765, clock=None):
 
     @app.post('/api/read-visible')
     async def read_visible(): return await controller.action('read_visible')
+
+    @app.get('/api/monitor/result')
+    async def monitor_result():
+        async with controller.lock:
+            return {**(controller.bundle_report or {}),'cloudStorage':controller.last_cloud_capture,
+                    'monitor':controller.monitor_state}
+
+    @app.post('/api/local/monitor/play')
+    async def monitor_play(request:Request):
+        local_only(request)
+        try: return await controller.play()
+        except CloudStorageError as exc:
+            controller.enabled=False
+            raise StopAutomation(str(exc)) from None
+
+    @app.post('/api/local/monitor/pause')
+    async def monitor_pause(request:Request):
+        local_only(request)
+        await controller.pause()
+        return controller.status()
 
     @app.post('/api/local/resume')
     async def resume(request:Request):

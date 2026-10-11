@@ -4,7 +4,7 @@
 <section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
 <p id="state">Chưa kết nối</p><small>Kết nối đọc có hiệu lực 30 phút. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra.</small>
-<hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
+<hr><button id="play">▶ Play — tự cuộn và kiểm tra mới</button><button id="pause">⏸ Pause</button><p id="monitorState" role="status"></p><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
 <p id="cloudState" role="status">Firestore: chưa kiểm tra trong phiên này.</p>
 <p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
 <section><h2>Delivery Bundle — Milestone 2</h2>
@@ -73,7 +73,7 @@ async function show(path,method='GET',body,save=false){
  if(data.bundleEngine)document.getElementById('bundleSummary').scrollIntoView({block:'nearest'});else if(cloudAction)result.scrollIntoView({block:'nearest'});
  }catch(e){result.textContent=e.message;if(cloudAction)cloud.textContent='Firestore: chưa xác nhận lưu — '+e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';result.scrollIntoView({block:'nearest'});}
 }
-for(const [id,path] of [['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
+for(const [id,path] of [['play','/api/local/monitor/play'],['pause','/api/local/monitor/pause'],['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
 document.getElementById('reviewBundles').onclick=async()=>{
  if(!bundleCapture)return;
  const button=document.getElementById('reviewBundles');button.disabled=true;
@@ -91,4 +91,7 @@ document.getElementById('openRouter').onclick=()=>show('/api/local/router/dashbo
 document.getElementById('routerState').onclick=()=>show('/api/router/status');
 document.getElementById('mcpConfig').onclick=async()=>{try{const data=await api('/api/local/mcp-config','POST');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='zalo-mcp-config.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);result.textContent='Đã tải cấu hình MCP. Thêm vào ứng dụng MCP được hỗ trợ trên máy này; giữ Local Agent chạy.';}catch(e){result.textContent=e.message;}};
 (async()=>{try{const s=await api('/api/ai/settings');if(s.configured){document.getElementById('base').value=s.base_url;document.getElementById('model').value=s.model;document.getElementById('fallback').value=s.fallback_models.join(',');}await show('/api/status');}catch(e){result.textContent=e.message;}})();
-</script></html>
+let monitorSequence=0,monitorFetching=false;
+setInterval(async()=>{if(monitorFetching)return;monitorFetching=true;try{const s=await api('/api/status');
+if((s.monitor?.sequence||0)>monitorSequence){const data=await api('/api/monitor/result');monitorSequence=data.monitor.sequence;result.textContent=JSON.stringify(data,null,2);renderBundles(data);document.getElementById('cloudState').textContent='Firestore: đã lưu — '+data.cloudStorage.documentPath;}
+document.getElementById('monitorState').textContent=(s.monitor_running?'Đang chạy • ':'')+(s.monitor?.message||s.monitor?.state||'')+' • kiểm tra mỗi 15 giây; phiên kết nối 30 phút.';}catch(e){document.getElementById('monitorState').textContent=e.message;}finally{monitorFetching=false;}},2000);</script></html>
