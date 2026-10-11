@@ -6,3 +6,5 @@
 2026-10-11 automatic setup: coverage added for MCP configuration merge/backup/idempotency, preservation of invalid or conflicting settings, unsupported clients/platforms, owned 9Router key repair, catalog-only model selection, missing-provider login requirement, custom gateway preservation and local-origin access enforcement. No AI completion or Zalo-data submission is performed by setup.
 
 Final automatic-setup validation: 120 tests passed with the pinned real 9Router server. Windows client-file behavior exercised in temporary Windows-shaped directories; actual user-machine provider login/client activation remains to be confirmed.
+
+2026-10-11 stopped-monitor diagnosis: 122 tests passed with the pinned real 9Router server. Added actual Chromium nested-scroller selection and monitor error-code/failed-stage assertions. Generic source/scroll/cloud errors now have distinct safe diagnoses; the observed user's failure cause remains unconfirmed until the updated diagnostic is run.

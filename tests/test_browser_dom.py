@@ -33,6 +33,19 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['atBottom'])
         self.assertGreater(await self.page.eval_on_selector('#timeline','n=>n.scrollTop'),0)
         self.assertEqual(await self.page.eval_on_selector('#conversationList','n=>n.scrollTop'),0)
+    async def test_nested_scrollers_choose_nearest_conversation(self):
+        await self.page.evaluate("""() => {
+          const timeline=document.getElementById('timeline');
+          timeline.style.cssText='overflow-y:auto;height:60px';
+          const spacer=document.createElement('div');spacer.style.height='500px';timeline.append(spacer);
+          const outer=document.createElement('div');outer.style.cssText='overflow-y:auto;height:40px';
+          timeline.before(outer);outer.append(timeline);
+        }""")
+        result=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})
+        self.assertTrue(result['atBottom'])
+        self.assertGreater(await self.page.eval_on_selector('#timeline','n=>n.scrollTop'),0)
+        self.assertEqual(await self.page.eval_on_selector('#timeline','n=>n.parentElement.scrollTop'),0)
+
     async def test_missing_scroller_pauses(self):
         with self.assertRaises(Exception):
             await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})

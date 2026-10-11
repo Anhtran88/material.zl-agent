@@ -3,7 +3,7 @@
 </style>
 <h1>Zalo Local Agent</h1><p>Kết nối trình duyệt trên máy bạn với công cụ hỗ trợ MCP. Phiên chat cần cấu hình MCP riêng để sử dụng cầu nối.</p>
 <section aria-labelledby="dashboardTitle"><h2 id="dashboardTitle">Theo dõi hoạt động</h2><button id="play">▶ Play — tự cuộn và kiểm tra mới</button><button id="pause">⏸ Pause</button>
-<p><span id="runBadge" class="badge" role="status">Đang kết nối Agent…</span></p><p id="stageDetail">Chờ trạng thái.</p>
+<p><span id="runBadge" class="badge" role="status">Đang kết nối Agent…</span></p><p id="stageDetail">Chờ trạng thái.</p><button id="reconnect" hidden>Kết nối lại nhóm</button>
 <p><b>Nhóm:</b> <span id="sourceTitle">—</span></p>
 <div class="dashboard-grid">
 <div class="metric"><small>Lần kiểm tra gần nhất</small><strong id="checkedTime">—</strong></div>
@@ -90,7 +90,7 @@ async function show(path,method='GET',body,save=false){
  if(data.bundleEngine)document.getElementById('bundleSummary').scrollIntoView({block:'nearest'});else if(cloudAction)result.scrollIntoView({block:'nearest'});
  }catch(e){result.textContent=e.message;if(cloudAction)cloud.textContent='Firestore: chưa xác nhận lưu — '+e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';result.scrollIntoView({block:'nearest'});}
 }
-for(const [id,path] of [['play','/api/local/monitor/play'],['pause','/api/local/monitor/pause'],['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
+for(const [id,path] of [['reconnect','/api/local/connect'],['play','/api/local/monitor/play'],['pause','/api/local/monitor/pause'],['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
 document.getElementById('reviewBundles').onclick=async()=>{
  if(!bundleCapture)return;
  const button=document.getElementById('reviewBundles');button.disabled=true;
@@ -126,8 +126,9 @@ function renderDashboard(s){
  if(s.auto_setup&&!document.getElementById('autoConfigState').dataset.shown){document.getElementById('autoConfigState').dataset.shown='yes';renderAutoSetup(s.auto_setup);}
  const phases={RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
  badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
+ document.getElementById('reconnect').hidden=m.state!=='PAUSED_ERROR';
  badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');
- document.getElementById('stageDetail').textContent=m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.';
+ document.getElementById('stageDetail').textContent=(m.errorCode?'Mã lỗi: '+m.errorCode+' · bước: '+({SCROLLING:'cuộn / dò mốc',COMPARING:'đối chiếu',SAVING:'lưu Firestore',CHECKING:'kiểm tra'}[m.failedStage]||m.failedStage||'kiểm tra')+' · ':'')+(m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.');
  document.getElementById('sourceTitle').textContent=d.sourceTitle||'—';
  document.getElementById('checkedTime').textContent=timeLabel(d.lastCheckAt);
  document.getElementById('nextCheck').textContent=s.monitor_running&&d.nextCheckAt?Math.max(0,Math.ceil(d.nextCheckAt-Date.now()/1000))+' giây':'—';

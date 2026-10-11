@@ -134,7 +134,7 @@ class Controller:
     async def monitor_cycle(self):
         async with self.lock:
             if not self.status()['connected']:
-                raise StopAutomation('Connection expired; reconnect locally')
+                raise StopAutomation('Phiên kết nối đã hết. Bấm Kết nối đọc nhóm rồi Play.',code='CONNECTION_EXPIRED')
             prior=(self.bundle_report or {})
             entries=prior.get('messages',[])+prior.get('attachments',[])
             anchor=max(entries,key=lambda n:n.get('renderedOrder',-1))['domContainerId'] if entries else None
@@ -189,9 +189,18 @@ class Controller:
                 await self.monitor_cycle()
                 try: await asyncio.wait_for(self.monitor_wake.wait(),timeout=15)
                 except asyncio.TimeoutError: pass
+        except (StopAutomation,CloudStorageError) as exc:
+            self.enabled=False
+            code=getattr(exc,'code','AUTOMATION_PAUSED')
+            message=str(exc) if code!='AUTOMATION_PAUSED' else 'Lỗi kiểm tra trình duyệt; kết nối lại rồi thử Play.'
+            failed_stage=self.monitor_state.get('state')
+            self.stage('PAUSED_ERROR',message)
+            self.monitor_state.update({'errorCode':code,'failedStage':failed_stage})
         except Exception:
             self.enabled=False
-            self.stage('PAUSED_ERROR','Agent dừng: kiểm tra trình duyệt, nguồn, kết nối Firestore rồi kết nối lại.')
+            failed_stage=self.monitor_state.get('state')
+            self.stage('PAUSED_ERROR','Lỗi xử lý nội bộ. Agent đã dừng; chưa xác nhận lưu lần đọc này.')
+            self.monitor_state.update({'errorCode':'INTERNAL_ERROR','failedStage':failed_stage})
         finally:
             self.monitor_running=False
 
@@ -291,7 +300,7 @@ def create_app(token, controller=None, port=8765, clock=None):
 
     @app.exception_handler(StopAutomation)
     async def paused(request, exc):
-        return JSONResponse({'detail':str(exc),'state':'PAUSED_USER'},status_code=409)
+        return JSONResponse({'detail':str(exc),'errorCode':getattr(exc,'code','AUTOMATION_PAUSED'),'state':'PAUSED_USER'},status_code=409)
 
     @app.exception_handler(Exception)
     async def failure(request,exc):

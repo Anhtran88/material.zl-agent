@@ -12,19 +12,19 @@ DOM_PROBE = r'''({source, operation}) => {
   const challenges = [...document.querySelectorAll(
     '[role="dialog"], [id*="captcha" i], [class*="captcha" i], iframe[src*="captcha" i], input[type="password"]'
   )].filter(visible);
-  if (challenges.length) throw new Error('PAUSE_USER: dialog or possible challenge');
+  if (challenges.length) throw new Error('ZMA:CHALLENGE_VISIBLE');
   const rows = [...document.querySelectorAll('[data-id="div_TabMsg_ThrdChItem"]')];
   const allowed = rows.filter(n => normalize(n.querySelector('.conv-item-title__name .truncate')?.textContent || '') === normalize(source.title));
   if (allowed.length !== 1 || allowed[0].getAttribute('anim-data-id') !== source.dom_id)
-    throw new Error('PAUSE_USER: allowed source missing, ambiguous or changed');
+    throw new Error('ZMA:SOURCE_MISSING');
   const selected = rows.filter(n => n.querySelector('.conv-item.selected'));
   if (selected.length !== 1 || selected[0] !== allowed[0])
-    throw new Error('PAUSE_USER: active source mismatch');
+    throw new Error('ZMA:SOURCE_MISMATCH');
   const texts = [...document.querySelectorAll('[id^="text-mCntr_"]')]
     .filter(n => n.id.endsWith('-' + source.dom_id) && visible(n));
   const images = [...document.querySelectorAll('[id^="image-mCntr_"]')]
     .filter(n => n.id.endsWith('-' + source.dom_id) && visible(n));
-  if (!texts.length && !images.length) throw new Error('PAUSE_USER: no verified rendered nodes');
+  if (!texts.length && !images.length) throw new Error('ZMA:NO_MESSAGES');
   const base = {sourceTitle:source.title, candidateSourceId:source.dom_id,
     coverage:'rendered observed text/image containers only', layer:'RAW_UNVERIFIED',
     textContainers:texts.length, imageContainers:images.length,
@@ -36,10 +36,11 @@ DOM_PROBE = r'''({source, operation}) => {
     const candidates=[];
     for(let n=nodes[0].parentElement;n && n!==document.body;n=n.parentElement) {
       const overflow=getComputedStyle(n).overflowY;
-      if (['auto','scroll'].includes(overflow) && n.scrollHeight>n.clientHeight &&
+      if (['auto','scroll'].includes(overflow) && n.clientHeight>0 &&
           nodes.every(c=>n.contains(c)) && !n.querySelector('[data-id="div_TabMsg_ThrdChItem"]')) candidates.push(n);
     }
-    if(candidates.length!==1) throw new Error('PAUSE_USER: conversation scroller ambiguous');
+    if(!candidates.length) throw new Error('ZMA:SCROLLER_MISSING');
+    // Candidates are nested ancestors of the same verified nodes; choose the nearest.
     const n=candidates[0];
     if(operation === 'bottom_status') return {atBottom:n.scrollHeight-n.clientHeight-n.scrollTop<=3};
     if(operation === 'scroll_previous') { n.scrollTop=Math.max(0,n.scrollTop-n.clientHeight*0.75); return {atTop:n.scrollTop<=3}; }
@@ -124,8 +125,16 @@ class LocalBrowser:
             raise StopAutomation('Unexpected origin')
         try:
             return await self.page.evaluate(DOM_PROBE, {'source': SOURCE, 'operation': operation})
-        except Exception:
-            raise StopAutomation('Source/UI/security verification failed; reconnect locally after checking browser') from None
+        except Exception as exc:
+            errors={
+                'CHALLENGE_VISIBLE':'Có hộp thoại hoặc bước xác minh. Hoàn tất trên Zalo rồi kết nối lại.',
+                'SOURCE_MISSING':'Không xác minh được nhóm trong danh sách hội thoại. Đóng bảng tìm kiếm Zalo bằng nút Đóng, chọn lại nhóm rồi kết nối lại.',
+                'SOURCE_MISMATCH':'Nhóm đang chọn khác nhóm được phép. Chọn lại nhóm rồi kết nối lại.',
+                'NO_MESSAGES':'Chưa thấy tin nhắn của nhóm đã xác minh. Chờ Zalo tải nội dung rồi kết nối lại.',
+                'SCROLLER_MISSING':'Không tìm thấy vùng cuộn hội thoại chứa tin nhắn đã xác minh. Cần kiểm tra cấu trúc DOM.'}
+            for code,message in errors.items():
+                if 'ZMA:'+code in str(exc): raise StopAutomation(message,code=code) from None
+            raise StopAutomation('Source/UI/security verification failed; reconnect locally after checking browser',code='BROWSER_VERIFICATION_FAILED') from None
 
     async def read_latest(self, anchor=None):
         import asyncio
@@ -140,7 +149,7 @@ class LocalBrowser:
                 result=await self.execute('read_visible')
                 break
         else:
-            raise StopAutomation('Conversation did not settle at bottom; paused')
+            raise StopAutomation('Cuộc trò chuyện chưa ổn định ở cuối trang. Kết nối lại rồi thử Play.',code='SCROLL_NOT_SETTLED')
         if not anchor or any(n['domContainerId']==anchor for n in result['messages']+result['attachments']):
             return {**result,'navigation':'verified conversation scrolled to bottom','historicalCoverage':False}
         collected={n['domContainerId']:n for n in result['messages']+result['attachments']}
@@ -155,13 +164,13 @@ class LocalBrowser:
             order=fresh+order
             collected.update({n['domContainerId']:n for n in entries})
             if sum('text' in n for n in collected.values())>200 or sum('kind' in n for n in collected.values())>200:
-                raise StopAutomation('Catch-up exceeds capture limit; paused without advancing checkpoint')
+                raise StopAutomation('Khoảng cần đọc vượt giới hạn bản lưu. Đã dừng, chưa cập nhật mốc.',code='CATCHUP_LIMIT')
             if anchor in collected:
                 found=True;break
             if movement['atTop']:
                 await asyncio.sleep(0.6)
         if not found:
-            raise StopAutomation('Saved message anchor not found within bounded catch-up; paused without advancing checkpoint')
+            raise StopAutomation('Chưa tìm thấy tin cuối đã lưu sau khi dò lịch sử. Đã dừng, chưa cập nhật mốc.',code='ANCHOR_NOT_FOUND')
         # Return the operator to the bottom and include arrivals during catch-up.
         latest=await self.read_latest()
         for n in sorted(latest['messages']+latest['attachments'],key=lambda n:n['renderedOrder']):

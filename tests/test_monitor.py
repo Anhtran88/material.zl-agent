@@ -64,6 +64,15 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.c.enabled);self.assertFalse(self.c.monitor_running)
         self.assertEqual(self.c.monitor_state['state'],'PAUSED_ERROR')
         self.assertEqual(self.store.count,0)
+    async def test_specific_failure_stage_and_code_visible(self):
+        async def fail(anchor=None):
+            raise StopAutomation('Đóng bảng tìm kiếm Zalo rồi kết nối lại.',code='SOURCE_MISSING')
+        self.browser.read_latest=fail
+        await self.c.play();await asyncio.sleep(0.02)
+        self.assertEqual(self.c.monitor_state['errorCode'],'SOURCE_MISSING')
+        self.assertEqual(self.c.monitor_state['failedStage'],'SCROLLING')
+        self.assertEqual(self.store.count,0)
+
     async def test_expired_connection_cannot_play(self):
         self.c.until=0
         with self.assertRaises(StopAutomation): await self.c.play()

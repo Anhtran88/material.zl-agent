@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
 class StopAutomation(RuntimeError):
-    pass
+    def __init__(self, message, code='AUTOMATION_PAUSED'):
+        super().__init__(message)
+        self.code=code
 
 @dataclass(frozen=True)
 class Source:
