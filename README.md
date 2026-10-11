@@ -42,6 +42,6 @@ Close the manual login browser using Enter in its PowerShell window before start
 
 ## Local Agent + automatic 9Router setup
 
-Download the latest project, close the earlier Agent browser, then run `scripts\Start-LocalAgent.cmd` on Windows x64. The bootstrap installs a checksum-verified portable Node runtime and locked 9Router version, protects local credentials, starts two loopback services and opens the control page. Use **Mở Zalo → Kết nối đọc nhóm → Kiểm tra DOM**. Use **Duyệt nhà cung cấp AI trong 9Router** to approve your own provider/account; no source data is sent to AI by this version. You can export the DOM report without manually using F12.
+Download the latest project, close the earlier Agent browser, then run `scripts\Start-LocalAgent.cmd` on 64-bit Windows. The bootstrap installs a checksum-verified portable Node runtime and locked 9Router version, protects local credentials, starts two loopback services and opens the control page. Use **Mở Zalo → Kết nối đọc nhóm → Kiểm tra DOM**. Use **Duyệt nhà cung cấp AI trong 9Router** to approve your own provider/account; no source data is sent to AI by this version. You can export the DOM report without manually using F12.
 
 See [Local Agent guide](docs/LOCAL_AGENT.md) for MCP client configuration, provider setup, stopping, security controls and validation limits. A compatible local MCP client can use the bridge; the current cloud chat is not connected to your desktop automatically.

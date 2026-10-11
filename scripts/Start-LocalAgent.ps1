@@ -24,16 +24,21 @@ if (-not (Test-Path $PythonExe)) {
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 & $PythonExe -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { throw 'Chromium installation failed.' }
-# Use a pinned portable x64 Node build; no administrator/MSI/PATH modifications.
-$MachineArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-if ($MachineArch -ne 'AMD64') { throw 'This bootstrap supports Windows x64. ARM64 requires a separately validated build.' }
+# Match the compiled Python target; environment CPU variables may be absent/stale.
+$NodeArch = (& $PythonExe -m material_agent.windows_runtime | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $NodeArch -notin @('x64', 'arm64')) { throw 'A supported 64-bit Windows Python runtime is required.' }
+Write-Host "Detected Python runtime; portable Node architecture: $NodeArch"
 $NodeVersion = '24.19.0'
-$NodeFolder = Join-Path $ToolsRoot "node\node-v$NodeVersion-win-x64"
+$NodeFolder = Join-Path $ToolsRoot "node\node-v$NodeVersion-win-$NodeArch"
 $NodeExe = Join-Path $NodeFolder 'node.exe'
-$NodeHash = '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73'
+$NodeHashes = @{
+    x64 = '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73'
+    arm64 = '8502f4a50b458d4cc38ed8f2001556c2cd239d464920f74017926ccb1e1c157f'
+}
+$NodeHash = $NodeHashes[$NodeArch]
 if (-not (Test-Path $NodeExe)) {
-    $NodeArchive = Join-Path $ToolsRoot "node-v$NodeVersion-win-x64.zip"
-    Invoke-WebRequest -Uri "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-x64.zip" -OutFile $NodeArchive
+    $NodeArchive = Join-Path $ToolsRoot "node-v$NodeVersion-win-$NodeArch.zip"
+    Invoke-WebRequest -Uri "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-$NodeArch.zip" -OutFile $NodeArchive
     if ((Get-FileHash $NodeArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $NodeHash) { throw 'Node archive checksum mismatch.' }
     Expand-Archive -Path $NodeArchive -DestinationPath (Join-Path $ToolsRoot 'node') -Force
     Remove-Item $NodeArchive

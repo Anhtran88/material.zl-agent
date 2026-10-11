@@ -11,6 +11,7 @@ import httpx
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import read_connection, write_connection
 from .login import profile_path
+from .windows_runtime import node_architecture
 
 ROUTER_VERSION='0.5.99'
 NODE_VERSION='24.19.0'
@@ -18,7 +19,8 @@ NODE_VERSION='24.19.0'
 class RouterRuntime:
     def __init__(self, root=None, node=None, server=None, port=20128, gateway=None):
         self.root=Path(root or profile_path().parent)
-        self.node=node or self.root/'tools'/'node'/f'node-v{NODE_VERSION}-win-x64'/'node.exe'
+        arch=node_architecture() if os.name=='nt' and node is None else 'x64'
+        self.node=node or self.root/'tools'/'node'/f'node-v{NODE_VERSION}-win-{arch}'/'node.exe'
         self.server=server or self.root/'tools'/'9router'/'node_modules'/'9router'/'app'/'custom-server.js'
         self.port=port; self.origin=f'http://127.0.0.1:{port}'
         self.gateway=gateway or GatewayService()
