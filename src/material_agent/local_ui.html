@@ -1,12 +1,29 @@
 <!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zalo Local Agent</title>
-<style>body{font:16px system-ui;max-width:850px;margin:32px auto;padding:0 20px;color:#182333;background:#f5f7fa}section{background:white;border:1px solid #d8dfe8;border-radius:12px;padding:20px;margin:18px 0}button{padding:10px 15px;margin:5px;border:0;border-radius:6px;background:#165dcd;color:white;cursor:pointer}button:disabled{opacity:.5}input{display:block;width:95%;padding:10px;margin:5px 0 14px;border:1px solid #adb9c9;border-radius:5px}pre{white-space:pre-wrap;word-break:break-word;max-height:380px;overflow:auto;background:#eef2f7;padding:15px}small{color:#49566b}.stop{background:#b52230}</style>
+<style>body{font:16px system-ui;max-width:850px;margin:32px auto;padding:0 20px;color:#182333;background:#f5f7fa}section{background:white;border:1px solid #d8dfe8;border-radius:12px;padding:20px;margin:18px 0}button{padding:10px 15px;margin:5px;border:0;border-radius:6px;background:#165dcd;color:white;cursor:pointer}button:disabled{opacity:.5}input{display:block;width:95%;padding:10px;margin:5px 0 14px;border:1px solid #adb9c9;border-radius:5px}pre{white-space:pre-wrap;word-break:break-word;max-height:380px;overflow:auto;background:#eef2f7;padding:15px}small{color:#49566b}.stop{background:#b52230}.dashboard-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.metric{padding:14px;border-radius:10px;background:#f0f5fc}.metric strong{display:block;font-size:26px}.badge{padding:7px 12px;border-radius:20px;display:inline-block;background:#e6edf7}.badge.running{background:#dcf7e5;color:#176335}.badge.error{background:#ffe4e6;color:#a0172b}.badge.running:before{content:'● ';animation:blink 1.5s infinite}@keyframes blink{50%{opacity:.4}}.saved-item{border-bottom:1px solid #e1e6ed;padding:12px 0}.saved-item p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.path{overflow-wrap:anywhere}#activity{padding-left:20px;font-size:14px}#activity li{margin:7px 0}section,select{min-width:0;max-width:100%;box-sizing:border-box}select{white-space:normal}#captureMessages{max-height:420px;overflow:auto}details{margin:12px 0}button:focus-visible{outline:3px solid #efaa24}
+</style>
 <h1>Zalo Local Agent</h1><p>Kết nối trình duyệt trên máy bạn với công cụ hỗ trợ MCP. Phiên chat cần cấu hình MCP riêng để sử dụng cầu nối.</p>
+<section aria-labelledby="dashboardTitle"><h2 id="dashboardTitle">Theo dõi hoạt động</h2><button id="play">▶ Play — tự cuộn và kiểm tra mới</button><button id="pause">⏸ Pause</button>
+<p><span id="runBadge" class="badge" role="status">Đang kết nối Agent…</span></p><p id="stageDetail">Chờ trạng thái.</p>
+<p><b>Nhóm:</b> <span id="sourceTitle">—</span></p>
+<div class="dashboard-grid">
+<div class="metric"><small>Lần kiểm tra gần nhất</small><strong id="checkedTime">—</strong></div>
+<div class="metric"><small>Kiểm tra tiếp theo</small><strong id="nextCheck">—</strong></div>
+<div class="metric"><small>Số lần kiểm tra trong phiên</small><strong id="checkCount">0</strong></div>
+<div class="metric"><small>Lần lưu mới trong vòng Play</small><strong id="saveCount">0</strong></div>
+</div><p id="changeSummary">Chưa kiểm tra tin mới.</p><small id="connectionCountdown"></small>
+<h3>Bản dữ liệu Zalo đã lưu gần nhất</h3><p id="savedStatus" role="status">Chưa xác nhận bản dữ liệu Zalo. Kiểm tra kết nối Firestore không phải bản lưu tin nhắn.</p>
+<div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bản lưu</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bản lưu</small><strong id="savedImages">0</strong></div></div>
+<p id="savedPath" class="path"></p><p><small>Ảnh hiện được lưu dưới dạng thông tin tham chiếu, chưa có file ảnh gốc. Ngày xác nhận trên phiếu chưa được trích xuất.</small></p>
+<div id="captureMessages"><p>Chưa có nội dung đã lưu trong phiên. Play hoặc “Khôi phục lần đọc từ Firestore” để tải bản lưu trước.</p></div>
+<details><summary>Thông tin ảnh đã ghi nhận</summary><div id="captureImages"></div></details>
+<details open><summary>Hoạt động gần đây trong phiên</summary><ol id="activity"><li>Chưa chạy.</li></ol></details>
+</section>
 <section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
 <p id="state">Chưa kết nối</p><small>Kết nối đọc có hiệu lực 30 phút. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra.</small>
-<hr><button id="play">▶ Play — tự cuộn và kiểm tra mới</button><button id="pause">⏸ Pause</button><p id="monitorState" role="status"></p><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
+<hr><p id="monitorState" role="status"></p><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
 <p id="cloudState" role="status">Firestore: chưa kiểm tra trong phiên này.</p>
-<p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
+<p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận. Mốc bản đọc đã lưu được quản lý trên Firestore; chưa xác nhận đầy đủ lịch sử.</small></p></section>
 <section><h2>Delivery Bundle — Milestone 2</h2>
 <p>Đề xuất ghép tin và ảnh trong lần đọc hiện tại. Điểm là mức hỗ trợ của quy tắc, không phải xác suất đúng. Không tự xác nhận giao nhận hoặc tính khối lượng.</p>
 <p id="bundleSummary">Đọc tin nhắn để tạo đề xuất.</p><div id="bundleMessages"></div><div id="bundleLinks"></div>
@@ -69,7 +86,7 @@ async function show(path,method='GET',body,save=false){
  try{const data=await api(path,method,body);result.textContent=JSON.stringify(data,null,2);renderBundles(data);
  if(data.cloudStorage?.saved===true)cloud.textContent=(data.kind==='CONNECTIVITY_TEST'?'Firestore: kiểm tra ghi thành công — ':data.resume?.restored?'Firestore: đã khôi phục — ':data.cloudStorage.duplicateSnapshot?'Firestore: dùng lại bản đọc đã lưu — ':'Firestore: đã lưu báo cáo — ')+data.cloudStorage.documentPath;
  if(data.resume?.restored===false)cloud.textContent='Firestore: chưa có bản đọc để khôi phục.';
- const s=await api('/api/status');document.getElementById('state').textContent=s.connected?'Đã kết nối đọc nhóm':'Đã ngắt / chờ kiểm tra thủ công';
+ const s=await api('/api/status');renderDashboard(s);document.getElementById('state').textContent=s.connected?'Đã kết nối đọc nhóm':'Đã ngắt / chờ kiểm tra thủ công';
  if(data.bundleEngine)document.getElementById('bundleSummary').scrollIntoView({block:'nearest'});else if(cloudAction)result.scrollIntoView({block:'nearest'});
  }catch(e){result.textContent=e.message;if(cloudAction)cloud.textContent='Firestore: chưa xác nhận lưu — '+e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';result.scrollIntoView({block:'nearest'});}
 }
@@ -91,7 +108,49 @@ document.getElementById('openRouter').onclick=()=>show('/api/local/router/dashbo
 document.getElementById('routerState').onclick=()=>show('/api/router/status');
 document.getElementById('mcpConfig').onclick=async()=>{try{const data=await api('/api/local/mcp-config','POST');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='zalo-mcp-config.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);result.textContent='Đã tải cấu hình MCP. Thêm vào ứng dụng MCP được hỗ trợ trên máy này; giữ Local Agent chạy.';}catch(e){result.textContent=e.message;}};
 (async()=>{try{const s=await api('/api/ai/settings');if(s.configured){document.getElementById('base').value=s.base_url;document.getElementById('model').value=s.model;document.getElementById('fallback').value=s.fallback_models.join(',');}await show('/api/status');}catch(e){result.textContent=e.message;}})();
-let monitorSequence=0,monitorFetching=false;
-setInterval(async()=>{if(monitorFetching)return;monitorFetching=true;try{const s=await api('/api/status');
-if((s.monitor?.sequence||0)>monitorSequence){const data=await api('/api/monitor/result');monitorSequence=data.monitor.sequence;result.textContent=JSON.stringify(data,null,2);renderBundles(data);document.getElementById('cloudState').textContent='Firestore: đã lưu — '+data.cloudStorage.documentPath;}
-document.getElementById('monitorState').textContent=(s.monitor_running?'Đang chạy • ':'')+(s.monitor?.message||s.monitor?.state||'')+' • kiểm tra mỗi 15 giây; phiên kết nối 30 phút.';}catch(e){document.getElementById('monitorState').textContent=e.message;}finally{monitorFetching=false;}},2000);</script></html>
+let displayedRevision=-1,monitorFetching=false;
+const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v*1000:v);return Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false});};
+function renderDashboard(s){
+ const d=s.dashboard||{},m=s.monitor||{},c=d.savedCapture||{},badge=document.getElementById('runBadge');
+ const phases={RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
+ badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
+ badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');
+ document.getElementById('stageDetail').textContent=m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.';
+ document.getElementById('sourceTitle').textContent=d.sourceTitle||'—';
+ document.getElementById('checkedTime').textContent=timeLabel(d.lastCheckAt);
+ document.getElementById('nextCheck').textContent=s.monitor_running&&d.nextCheckAt?Math.max(0,Math.ceil(d.nextCheckAt-Date.now()/1000))+' giây':'—';
+ document.getElementById('checkCount').textContent=d.stats?.checks||0;
+ document.getElementById('saveCount').textContent=d.stats?.saved||0;
+ document.getElementById('changeSummary').textContent=d.lastCheckAt?'Lần kiểm tra vừa rồi: '+(m.newObservedContainers||0)+' mục mới · '+(m.changedObservedContainers||0)+' mục thay đổi (tin hoặc thông tin ảnh).':'Chưa hoàn tất lần kiểm tra.';
+ document.getElementById('connectionCountdown').textContent='Thời gian kết nối còn lại: '+Math.ceil((d.connectionSecondsRemaining||0)/60)+' phút. Số liệu trong phiên; bản lưu giữ trên Firestore.';
+ document.getElementById('savedStatus').textContent=c.confirmed?'✓ Đã xác nhận lưu dữ liệu Zalo trên Firestore · '+timeLabel(c.commitTime):'Chưa xác nhận bản lưu dữ liệu Zalo. Bản kiểm tra kết nối không chứa tin nhắn.';
+ document.getElementById('savedMessages').textContent=c.messages||0;document.getElementById('savedImages').textContent=c.imageReferences||0;
+ document.getElementById('savedPath').textContent=c.documentPath||'';
+ const activity=document.getElementById('activity');activity.replaceChildren();
+ for(const e of d.activity||[]){const li=document.createElement('li');li.textContent=timeLabel(e.at)+' · '+e.message;activity.append(li);}
+ document.getElementById('play').disabled=!!s.monitor_running||!s.connected;
+ document.getElementById('pause').disabled=!s.monitor_running;
+}
+function renderSaved(data){
+ const messages=document.getElementById('captureMessages');messages.replaceChildren();
+ for(const [i,m] of (data.messages||[]).entries()){
+  const item=document.createElement('article');item.className='saved-item';const title=document.createElement('strong');title.textContent='Tin '+(i+1)+' · đã lưu';
+  const text=document.createElement('p');text.textContent=m.text;item.append(title,text);messages.append(item);
+ }
+ if(!(data.messages||[]).length){const p=document.createElement('p');p.textContent='Bản lưu này chưa có tin nhắn văn bản.';messages.append(p);}
+ const images=document.getElementById('captureImages');images.replaceChildren();
+ for(const a of data.attachments||[]){for(const image of a.images||[]){const p=document.createElement('p');p.className='path';p.textContent=(image.domImageId||a.domContainerId)+' · '+(image.width||0)+' × '+(image.height||0)+' · '+(image.loaded?'đã hiển thị trong Zalo':'chưa tải xong trong Zalo')+' · chưa lưu file ảnh gốc';images.append(p);}}
+}
+async function refreshDashboard(){
+ if(monitorFetching)return;monitorFetching=true;
+ try{const s=await api('/api/status');renderDashboard(s);
+  const revision=s.dashboard?.revision||0;
+  if(revision!==displayedRevision&&s.dashboard?.savedCapture?.confirmed){
+   const data=await api('/api/monitor/result');renderSaved(data);renderBundles(data);result.textContent=JSON.stringify(data,null,2);
+   displayedRevision=revision;
+  }
+ }catch(e){const badge=document.getElementById('runBadge');badge.textContent='Mất kết nối Local Agent';badge.className='badge error';document.getElementById('stageDetail').textContent=e.message;}
+ finally{monitorFetching=false;}
+}
+setInterval(refreshDashboard,1000);refreshDashboard();
+</script></html>

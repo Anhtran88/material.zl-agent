@@ -64,3 +64,7 @@ After opening Zalo and connecting the allowed group, press **Play — tự cuộ
 Play attempts bounded catch-up to the saved DOM anchor after downtime; an unlocatable anchor or excessive gap pauses the worker. Slip-date extraction is not added by Play. Business data remains cloud-only.
 
 Update: Play now traverses older rendered windows until the last saved DOM anchor is found, then returns to the bottom. Catch-up is bounded to 80 scroll steps and capture size limits; missing anchors or an excessive gap pause without advancing the checkpoint. DOM anchors remain provisional identities; this is not proof of complete server history.
+
+### Visual activity dashboard
+
+The top panel shows the active step, last successful check time, next-check countdown, connection expiry and checks/saves during the current process session. The saved-data panel counts messages and image references in the latest confirmed Zalo capture and displays its complete message text and Firestore document path. Connectivity probes do not count as saved Zalo captures. Image references do not mean original image files were saved. “No change” checks do not increase the save count. Recent activity is bounded session memory; reopening the control page reads the same live backend status. Restart then Play/resume restores the durable capture from Firestore; session counters restart at zero.

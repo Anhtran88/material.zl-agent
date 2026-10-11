@@ -33,6 +33,20 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.browser.text+=' đã xác nhận'
         await self.c.monitor_cycle();self.assertEqual(self.store.count,2)
         self.assertEqual(self.c.monitor_state['changedObservedContainers'],1)
+    async def test_dashboard_counts_confirmed_capture_not_diagnostic(self):
+        self.assertFalse(self.c.dashboard()['savedCapture']['confirmed'])
+        await self.c.monitor_cycle()
+        dashboard=self.c.dashboard()
+        self.assertTrue(dashboard['savedCapture']['confirmed'])
+        self.assertEqual(dashboard['savedCapture']['messages'],1)
+        self.assertEqual(dashboard['stats']['checks'],1)
+        self.assertEqual(dashboard['stats']['saved'],1)
+        await self.c.monitor_cycle()
+        self.assertEqual(self.c.dashboard()['stats']['unchanged'],1)
+        self.assertEqual(self.c.dashboard()['stats']['saved'],1)
+        self.assertGreater(self.c.dashboard()['nextCheckAt'],self.c.dashboard()['lastCheckAt'])
+        self.assertFalse(self.c.dashboard()['savedCapture']['originalImagesSaved'])
+
     async def test_reorder_is_not_new_data(self):
         await self.c.monitor_cycle()
         self.c.bundle_report['messages'][0]['renderedOrder']=23

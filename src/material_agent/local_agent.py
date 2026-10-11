@@ -20,7 +20,7 @@ from .bridge_credentials import write_connection
 from .bundle_engine import build_bundles, review_bundles, BundleInputError
 from .firestore_capture import CloudStorageError
 from .recovery_store import RecoverableFirestoreStore
-from .local_browser import LocalBrowser
+from .local_browser import LocalBrowser, SOURCE
 from .login import profile_path
 from .models import StopAutomation
 from .router_runtime import RouterRuntime
@@ -74,15 +74,45 @@ class Controller:
         self.monitor_running=False
         self.monitor_sequence=0
         self.monitor_state={"state":"IDLE"}
+        self.saved_report=None
+        self.saved_receipt=None
+        self.data_revision=0
+        self.monitor_stats={'checks':0,'unchanged':0,'saved':0}
+        self.activity=deque(maxlen=20)
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
-        return {'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
+        return {'dashboard':self.dashboard(),'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
                 'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
                 'business_storage':'FIRESTORE_RECOVERABLE_CAPTURE',
                 'last_cloud_capture':self.last_cloud_capture,
                 'business_data_persisted':self.last_cloud_capture is not None,'local_business_persistence':False}
+
+    def dashboard(self):
+        report=self.saved_report or {}
+        attachments=report.get('attachments',[])
+        return {'revision':self.data_revision,'sourceTitle':SOURCE['title'],
+            'connectionSecondsRemaining':max(0,int(self.until-self.clock())) if self.enabled else 0,
+            'lastCheckAt':self.monitor_state.get('checkedAt'),
+            'nextCheckAt':self.monitor_state.get('nextCheckAt'),
+            'stats':dict(self.monitor_stats),'activity':list(self.activity),
+            'savedCapture':{'confirmed':bool(self.saved_receipt and self.saved_receipt.get('saved')),
+                'documentPath':(self.saved_receipt or {}).get('documentPath'),
+                'commitTime':(self.saved_receipt or {}).get('commitTime'),
+                'messages':len(report.get('messages',[])),
+                'imageContainers':len(attachments),
+                'imageReferences':sum(len(a.get('images',[])) for a in attachments),
+                'originalImagesSaved':False,'slipDatesExtracted':False}}
+
+    def stage(self, state, message):
+        self.monitor_state={**self.monitor_state,'state':state,'message':message,'nextCheckAt':None}
+        self.activity.appendleft({'at':time.time(),'state':state,'message':message})
+
+    def record_capture(self, report, receipt):
+        self.saved_report=report
+        self.saved_receipt=receipt
+        self.data_revision+=1
 
     @staticmethod
     def observations(report):
@@ -100,31 +130,42 @@ class Controller:
             prior=(self.bundle_report or {})
             entries=prior.get('messages',[])+prior.get('attachments',[])
             anchor=max(entries,key=lambda n:n.get('renderedOrder',-1))['domContainerId'] if entries else None
+            self.stage('SCROLLING','Đang cuộn tới cuối và dò mốc đã lưu…')
             report=await self.browser.read_latest(anchor=anchor)
+            self.stage('COMPARING','Đang đối chiếu tin nhắn và thông tin ảnh…')
             current=self.observations(report)
             previous=self.observations(self.bundle_report or {})
             added=sum(k not in previous for k in current)
             changed=sum(k in previous and previous[k]!=v for k,v in current.items())
             if added or changed or not self.bundle_report:
                 report={**report,'bundleEngine':build_bundles(report)}
+                self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
                 receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
+                self.record_capture(report,receipt)
+                self.monitor_stats['saved']+=int(not receipt.get('duplicateSnapshot',False))
                 self.bundle_report=report
                 self.bundle_capture_path=receipt['documentPath']
                 self.last_cloud_capture=receipt
                 self.monitor_sequence+=1
+            self.monitor_stats['checks']+=1
+            self.monitor_stats['unchanged']+=int(not added and not changed)
             overlap=bool(current.keys() & previous.keys())
             self.monitor_state={'state':'SAVED' if added or changed else 'NO_CHANGE',
                 'sequence':self.monitor_sequence,'overlapWithSavedWindow':overlap,
-                'checkedAt':time.time(),'newObservedContainers':added,'changedObservedContainers':changed,
+                'checkedAt':time.time(),'nextCheckAt':time.time()+15,'newObservedContainers':added,'changedObservedContainers':changed,
                 'coverage':'latest rendered window; historical gap not verified',
                 'message':'Đã lưu dữ liệu mới/thay đổi' if added or changed else 'Không có thay đổi trong vùng cuối đã kiểm tra'}
+            self.activity.appendleft({'at':time.time(),'state':self.monitor_state['state'],
+                'message':self.monitor_state['message']+' · '+str(added)+' mục mới, '+str(changed)+' mục thay đổi'})
 
     async def play(self):
         async with self.lock:
             if self.monitor_running: return self.status()
             if not self.status()['connected']: raise StopAutomation('Connect locally before Play')
+            self.stage('RESTORING','Đang khôi phục mốc từ Firestore…')
             restored=await self.capture_store.resume(session_id=self.session_id)
             if restored.get('restored'):
+                self.record_capture(restored['report'],restored['cloudStorage'])
                 self.bundle_report=restored['report']
                 self.last_cloud_capture=restored['cloudStorage']
                 self.bundle_capture_path=self.last_cloud_capture['documentPath']
@@ -142,7 +183,7 @@ class Controller:
                 except asyncio.TimeoutError: pass
         except Exception:
             self.enabled=False
-            self.monitor_state={'state':'PAUSED_ERROR','message':'Agent dừng: kiểm tra trình duyệt, nguồn, kết nối Firestore rồi kết nối lại.'}
+            self.stage('PAUSED_ERROR','Agent dừng: kiểm tra trình duyệt, nguồn, kết nối Firestore rồi kết nối lại.')
         finally:
             self.monitor_running=False
 
@@ -172,6 +213,7 @@ class Controller:
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
                 self.last_cloud_capture=receipt
                 if operation=='read_visible':
+                    self.record_capture(result,receipt)
                     self.bundle_report=result
                     self.bundle_capture_path=receipt['documentPath']
                 result={**result,'cloudStorage':receipt}
@@ -293,7 +335,7 @@ def create_app(token, controller=None, port=8765, clock=None):
     @app.get('/api/monitor/result')
     async def monitor_result():
         async with controller.lock:
-            return {**(controller.bundle_report or {}),'cloudStorage':controller.last_cloud_capture,
+            return {**(controller.saved_report or {}),'cloudStorage':controller.saved_receipt,
                     'monitor':controller.monitor_state}
 
     @app.post('/api/local/monitor/play')
@@ -318,6 +360,7 @@ def create_app(token, controller=None, port=8765, clock=None):
                 restored=await controller.capture_store.resume(session_id=controller.session_id)
                 if restored.get('restored'):
                     report=restored['report'];receipt=restored['cloudStorage']
+                    controller.record_capture(report,receipt)
                     controller.bundle_report=report
                     controller.bundle_capture_path=receipt['documentPath']
                     controller.last_cloud_capture=receipt
@@ -342,6 +385,7 @@ def create_app(token, controller=None, port=8765, clock=None):
                 report={**controller.bundle_report,'bundleEngine':engine,
                         'parentCapturePath':controller.bundle_capture_path}
                 receipt=await controller.capture_store.save(report,operation='bundle_review',session_id=controller.session_id)
+                controller.record_capture(report,receipt)
                 controller.bundle_report=report
                 controller.bundle_capture_path=receipt['documentPath']
                 controller.last_cloud_capture=receipt
