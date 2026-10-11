@@ -64,6 +64,15 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('Full message 0',[m['text'] for m in window['messages']])
         self.assertLess(len(window['messages']),10)
 
+    async def test_group_binding_mismatch_does_not_click_or_rebind(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        port=LocalBrowser();port.page=self.page
+        with self.assertRaises(StopAutomation) as raised:
+            await port.select_group({'title':SOURCE['title'],'dom_id':'g999999'})
+        self.assertEqual(raised.exception.code,'GROUP_ID_CHANGED')
+        self.assertEqual(port.source,SOURCE)
+
     async def test_missing_scroller_pauses(self):
         with self.assertRaises(Exception):
             await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})

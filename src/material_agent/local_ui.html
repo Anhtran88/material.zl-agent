@@ -146,11 +146,11 @@ const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v
 function renderDashboard(s){
  const d=s.dashboard||{},m=s.monitor||{},c=d.savedCapture||{},badge=document.getElementById('runBadge');
  if(s.auto_setup&&!document.getElementById('autoConfigState').dataset.shown){document.getElementById('autoConfigState').dataset.shown='yes';renderAutoSetup(s.auto_setup);}
- const phases={REVERIFYING:'Đang tự xác minh lại nhóm',RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
+ const phases={SELECTING_GROUP:'Đang chuyển nhóm',REVERIFYING:'Đang tự xác minh lại nhóm',RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
  badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
  document.getElementById('reconnect').hidden=m.state!=='PAUSED_ERROR';
  badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');
- document.getElementById('stageDetail').textContent=(m.errorCode?'Mã lỗi: '+m.errorCode+(m.internalErrorType?' ('+m.internalErrorType+(m.internalErrorLocation?' · '+m.internalErrorLocation:'')+')':'')+' · bước: '+({SCROLLING:'cuộn / dò mốc',COMPARING:'đối chiếu',BUNDLING:'tạo bundle',SAVING:'lưu Firestore',CHECKING:'kiểm tra'}[m.failedStage]||m.failedStage||'kiểm tra')+' · ':'')+(m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.');
+ document.getElementById('stageDetail').textContent=(m.errorCode?'Mã lỗi: '+m.errorCode+(m.internalErrorType?' ('+m.internalErrorType+(m.internalErrorLocation?' · '+m.internalErrorLocation:'')+')':'')+' · bước: '+({SELECTING_GROUP:'chuyển nhóm',SCROLLING:'cuộn / dò mốc',COMPARING:'đối chiếu',BUNDLING:'tạo bundle',SAVING:'lưu Firestore',CHECKING:'kiểm tra'}[m.failedStage]||m.failedStage||'kiểm tra')+' · ':'')+(m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.');
  document.getElementById('sourceTitle').textContent=d.sourceTitle||'—';
  document.getElementById('checkedTime').textContent=timeLabel(d.lastCheckAt);
  document.getElementById('nextCheck').textContent=s.monitor_running&&d.nextCheckAt?Math.max(0,Math.ceil(d.nextCheckAt-Date.now()/1000))+' giây':'—';

@@ -20,16 +20,17 @@ class ContinuousBrowserFlow(unittest.IsolatedAsyncioTestCase):
           const sidebar=document.getElementById('conversationList'),first=sidebar.firstElementChild;
           const second=first.cloneNode(true);second.setAttribute('anim-data-id','g999999');
           second.querySelector('.truncate').textContent='TDC-ĐỐI CHIẾU KL BÊ TÔN';sidebar.append(second);
-          for(const row of [first,second])row.onclick=()=>{
+          for(const row of [first,second])row.querySelector('.conv-item').onclick=()=>setTimeout(()=>{
             for(const r of [first,second])r.querySelector('.conv-item').classList.remove('selected');
             row.querySelector('.conv-item').classList.add('selected');
             const id=row.getAttribute('anim-data-id'),timeline=document.getElementById('timeline');
             timeline.style.cssText='height:100px;overflow-y:auto';timeline.replaceChildren();
             const n=document.createElement('div');n.id='text-mCntr_sample-'+id;
             n.innerHTML='<div data-component="message-text-content"><span class="text">Vật tư '+id+' 10m3</span></div>';timeline.append(n);
-          };
-          first.click();
+          },1200);
+          first.querySelector('.conv-item').click();
         }""")
+        await asyncio.sleep(1.3)
         port=LocalBrowser();port.page=self.page
         cloud=FirestoreModel();store=RecoverableFirestoreStore(cloud.transport())
         controller=Controller(browser=port,router=Router(),capture_store=store)

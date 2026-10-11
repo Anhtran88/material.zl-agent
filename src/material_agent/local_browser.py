@@ -156,8 +156,8 @@ class LocalBrowser:
               const matches=rows.filter(n=>norm(n.querySelector('.conv-item-title__name .truncate')?.textContent||'')===norm(group.title));
               if(matches.length>1)return {error:'GROUP_AMBIGUOUS'};
               if(matches.length===1){const row=matches[0],id=row.getAttribute('anim-data-id');
-                if(!/^g[0-9]+$/.test(id||'') || (group.dom_id && group.dom_id!==id)) return {error:'SOURCE_MISMATCH'};
-                row.click();return {source:{title:group.title,dom_id:id}};}
+                if(!/^g[0-9]+$/.test(id||'') || (group.dom_id && group.dom_id!==id)) return {error:'GROUP_ID_CHANGED'};
+                return {source:{title:group.title,dom_id:id},alreadySelected:!!row.querySelector('.conv-item.selected')};}
               if(!rows.length)return {error:'GROUP_LIST_MISSING'};
               for(let n=rows[0].parentElement;n && n!==document.body;n=n.parentElement){
                 if(['auto','scroll'].includes(getComputedStyle(n).overflowY) && n.clientHeight>0 && rows.every(r=>n.contains(r)) && !n.querySelector('[id^="text-mCntr_"]')){
@@ -168,9 +168,27 @@ class LocalBrowser:
             if outcome.get('error'):raise StopAutomation('Không mở được nhóm đã chọn: '+outcome['error'],code=outcome['error'])
             if outcome.get('source'):
                 self.source=outcome['source']
-                await asyncio.sleep(0.5)
-                await self.execute('verify')
-                return dict(self.source)
+                if not outcome.get('alreadySelected'):
+                    try:
+                        # Native Playwright click hits the actual React conversation item,
+                        # rather than its outer positioning wrapper.
+                        target=self.page.locator('[data-id="div_TabMsg_ThrdChItem"][anim-data-id="'+self.source['dom_id']+'"] .conv-item')
+                        if await target.count()!=1:raise StopAutomation('Nhóm không duy nhất.',code='GROUP_AMBIGUOUS')
+                        await target.click(timeout=5000)
+                    except StopAutomation:raise
+                    except Exception:raise StopAutomation('Không bấm mở được nhóm. Đóng các bảng nổi trong Zalo rồi thử lại.',code='GROUP_CLICK_FAILED') from None
+                consecutive=0
+                for _ in range(40):
+                    await asyncio.sleep(0.25)
+                    try:
+                        await self.execute('verify')
+                        await self.execute('read_window')
+                        consecutive+=1
+                        if consecutive>=2:return dict(self.source)
+                    except StopAutomation as exc:
+                        consecutive=0
+                        if exc.code not in {'SOURCE_MISMATCH','SOURCE_MISSING','NO_MESSAGES'}:raise
+                raise StopAutomation('Zalo chưa chuyển xong sang nhóm đã chọn sau 10 giây. Không đọc hay lưu dữ liệu nhóm khác.',code='GROUP_SWITCH_TIMEOUT')
             if not outcome.get('moved'):break
             await asyncio.sleep(0.2)
         raise StopAutomation('Không tìm thấy nhóm trong danh sách hội thoại. Đóng tìm kiếm Zalo và bảo đảm đã tham gia nhóm.',code='GROUP_NOT_FOUND')
