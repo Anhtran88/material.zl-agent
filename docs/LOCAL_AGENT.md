@@ -99,3 +99,6 @@ Group switching uses a native Playwright click on the inner `.conv-item` rather 
 
 ## Local photo OCR
 After updating the ZIP, run scripts/Start-LocalAgent.ps1 so pip installs the new RapidOCR/Pillow dependencies, then connect and Play. The first updated pass can save a new extraction revision of the restored observed window even if the text is unchanged. Dashboard displays “Đang đọc ảnh phiếu bằng OCR”, read-image counts and proposed confirmation dates. Expand image information to inspect OCR text and statuses. OCR operates in memory on already loaded browser blob images, not a downloaded original or full-history archive; no Zalo image is sent to AI. Proposed dates remain unverified and contain only DD/MM/YYYY. Missing dates, unclear handwriting or uncertain image/message associations remain unknown/review. No manual approval is required merely to run OCR.
+
+## GROUP_CLICK_FAILED recovery — 2026-10-12
+Group switching now targets the native conversation-title element rather than the large grid item's centre, which can be covered by other sidebar elements. It retries transient rendering/click failure three times with fresh origin, title/ID and challenge checks. It never force-clicks, dismisses security dialogs, or silently rebinds changed group IDs. A completely obscured title still stops with GROUP_CLICK_FAILED and requires clearing the obstruction.

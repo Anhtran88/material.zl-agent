@@ -183,6 +183,39 @@ class LocalBrowser:
         except (ValueError,KeyError): return None
         return data if len(data)<=8*1024*1024 else None
 
+    async def _click_group(self, source):
+        import asyncio
+        # Click the visible title, whose native event bubbles to React's item handler.
+        # Large grid-item centres can fall under overlapping sidebar controls.
+        for attempt in range(3):
+            url=urlsplit(self.page.url)
+            if url.scheme!='https' or url.hostname!='chat.zalo.me' or url.port not in (None,443):
+                raise StopAutomation('Unexpected origin',code='BROWSER_VERIFICATION_FAILED')
+            state=await self.page.evaluate(r"""source => {
+              const norm=s=>s.normalize('NFC').replace(/\s+/gu,' ').trim();
+              if([...document.querySelectorAll('[role="dialog"],input[type="password"],[id*="captcha" i],[class*="captcha" i],iframe[src*="captcha" i]')].some(n=>n.getClientRects().length))return 'CHALLENGE_VISIBLE';
+              const rows=[...document.querySelectorAll('[data-id="div_TabMsg_ThrdChItem"]')].filter(n=>norm(n.querySelector('.conv-item-title__name .truncate')?.textContent||'')===norm(source.title));
+              if(rows.length>1)return 'GROUP_AMBIGUOUS';
+              if(!rows.length)return 'RENDERING';
+              if(rows[0].getAttribute('anim-data-id')!==source.dom_id)return 'GROUP_ID_CHANGED';
+              return rows[0].querySelector('.conv-item.selected')?'SELECTED':'READY';
+            }""",source)
+            if state=='SELECTED':return
+            if state not in {'READY','RENDERING'}:
+                raise StopAutomation('Không xác minh được nhóm trước khi bấm: '+state,code=state)
+            if state=='READY':
+                target=self.page.locator('[data-id="div_TabMsg_ThrdChItem"][anim-data-id="'+source['dom_id']+'"] .conv-item .conv-item-title__name .truncate')
+                try:
+                    if await target.count()>1:
+                        raise StopAutomation('Tên nhóm không duy nhất.',code='GROUP_AMBIGUOUS')
+                    await target.scroll_into_view_if_needed(timeout=2000)
+                    await target.click(timeout=2500)
+                    return
+                except StopAutomation:raise
+                except Exception:pass
+            await asyncio.sleep(0.3)
+        raise StopAutomation('Không bấm được tên nhóm sau 3 lần thử. Đóng bảng nổi che danh sách Zalo rồi kết nối lại.',code='GROUP_CLICK_FAILED')
+
     async def select_group(self, group):
         import asyncio
         for attempt in range(60):
@@ -209,14 +242,7 @@ class LocalBrowser:
             if outcome.get('source'):
                 self.source=outcome['source']
                 if not outcome.get('alreadySelected'):
-                    try:
-                        # Native Playwright click hits the actual React conversation item,
-                        # rather than its outer positioning wrapper.
-                        target=self.page.locator('[data-id="div_TabMsg_ThrdChItem"][anim-data-id="'+self.source['dom_id']+'"] .conv-item')
-                        if await target.count()!=1:raise StopAutomation('Nhóm không duy nhất.',code='GROUP_AMBIGUOUS')
-                        await target.click(timeout=5000)
-                    except StopAutomation:raise
-                    except Exception:raise StopAutomation('Không bấm mở được nhóm. Đóng các bảng nổi trong Zalo rồi thử lại.',code='GROUP_CLICK_FAILED') from None
+                    await self._click_group(self.source)
                 consecutive=0
                 for _ in range(40):
                     await asyncio.sleep(0.25)

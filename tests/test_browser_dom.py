@@ -147,3 +147,45 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
     async def test_origin_rejected_by_port(self):
         port=LocalBrowser();port.page=self.page
         with self.assertRaises(StopAutomation): await port.execute('read_visible')
+
+    async def test_native_title_click_avoids_obstructed_grid_centre(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        await self.page.evaluate("""() => {
+          const item=document.querySelector('.conv-item');item.classList.remove('selected');
+          item.style.cssText='position:relative;width:600px;height:160px';
+          item.querySelector('.truncate').style.cssText='width:260px;height:25px';
+          const cover=document.createElement('div');cover.style.cssText='position:absolute;left:270px;top:60px;width:80px;height:60px;background:red;z-index:10';
+          cover.onclick=e=>e.stopPropagation();item.append(cover);
+          item.onclick=()=>item.classList.add('selected');
+          document.getElementById('timeline').style.cssText='height:300px;overflow-y:auto';
+        }""")
+        port=LocalBrowser();port.page=self.page
+        source=await port.select_group({'title':SOURCE['title'],'dom_id':SOURCE['dom_id']})
+        self.assertEqual(source,SOURCE)
+
+    async def test_click_retry_refuses_changed_identity(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        await self.page.evaluate("document.querySelector('[anim-data-id]').setAttribute('anim-data-id','g999999');document.querySelector('.conv-item').classList.remove('selected')")
+        port=LocalBrowser();port.page=self.page
+        with self.assertRaises(StopAutomation) as error:await port._click_group(SOURCE)
+        self.assertEqual(error.exception.code,'GROUP_ID_CHANGED')
+
+    async def test_native_click_retries_transient_render_failure(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        await self.page.evaluate("() => {document.querySelector('.conv-item').classList.remove('selected');document.querySelector('.conv-item').onclick=()=>document.querySelector('.conv-item').classList.add('selected');}")
+        original=self.page.locator;attempts=[]
+        class TransientTarget:
+            def __init__(self,target):self.target=target
+            async def count(self):return await self.target.count()
+            async def scroll_into_view_if_needed(self,**kwargs):return await self.target.scroll_into_view_if_needed(**kwargs)
+            async def click(self,**kwargs):
+                attempts.append(1)
+                if len(attempts)==1:raise RuntimeError('transient DOM detach fixture')
+                return await self.target.click(**kwargs)
+        self.page.locator=lambda selector:TransientTarget(original(selector))
+        port=LocalBrowser();port.page=self.page
+        await port._click_group(SOURCE)
+        self.assertEqual(len(attempts),2)
