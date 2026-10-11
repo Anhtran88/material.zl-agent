@@ -20,28 +20,34 @@ DOM_PROBE = r'''({source, operation}) => {
   const selected = rows.filter(n => n.querySelector('.conv-item.selected'));
   if (selected.length !== 1 || selected[0] !== allowed[0])
     throw new Error('ZMA:SOURCE_MISMATCH');
-  const texts = [...document.querySelectorAll('[id^="text-mCntr_"]')]
+  let texts = [...document.querySelectorAll('[id^="text-mCntr_"]')]
     .filter(n => n.id.endsWith('-' + source.dom_id) && visible(n));
-  const images = [...document.querySelectorAll('[id^="image-mCntr_"]')]
+  let images = [...document.querySelectorAll('[id^="image-mCntr_"]')]
     .filter(n => n.id.endsWith('-' + source.dom_id) && visible(n));
   if (!texts.length && !images.length) throw new Error('ZMA:NO_MESSAGES');
+  const conversationScroller = () => {
+    const nodes=[...texts,...images];
+    for(let n=nodes[0].parentElement;n && n!==document.body;n=n.parentElement) {
+      if(['auto','scroll'].includes(getComputedStyle(n).overflowY) && n.clientHeight>0 &&
+         nodes.every(c=>n.contains(c)) && !n.querySelector('[data-id="div_TabMsg_ThrdChItem"]')) return n;
+    }
+    throw new Error('ZMA:SCROLLER_MISSING');
+  };
+  if(operation === 'read_window') {
+    const bounds=conversationScroller().getBoundingClientRect();
+    const intersects=n=>{const r=n.getBoundingClientRect();return r.bottom>Math.max(0,bounds.top) &&
+      r.top<Math.min(innerHeight,bounds.bottom) && r.right>Math.max(0,bounds.left) &&
+      r.left<Math.min(innerWidth,bounds.right);};
+    texts=texts.filter(intersects);images=images.filter(intersects);
+    if(!texts.length && !images.length) throw new Error('ZMA:NO_MESSAGES');
+  }
   const base = {sourceTitle:source.title, candidateSourceId:source.dom_id,
     coverage:'rendered observed text/image containers only', layer:'RAW_UNVERIFIED',
     textContainers:texts.length, imageContainers:images.length,
     checkpointAdvanced:false, historicalCoverage:false, filesCoverage:false};
   if (operation === 'verify') return base;
   if (['scroll_latest','bottom_status','scroll_previous'].includes(operation)) {
-    // Derive the conversation scroller from verified message nodes, never the sidebar.
-    const nodes=[...texts,...images];
-    const candidates=[];
-    for(let n=nodes[0].parentElement;n && n!==document.body;n=n.parentElement) {
-      const overflow=getComputedStyle(n).overflowY;
-      if (['auto','scroll'].includes(overflow) && n.clientHeight>0 &&
-          nodes.every(c=>n.contains(c)) && !n.querySelector('[data-id="div_TabMsg_ThrdChItem"]')) candidates.push(n);
-    }
-    if(!candidates.length) throw new Error('ZMA:SCROLLER_MISSING');
-    // Candidates are nested ancestors of the same verified nodes; choose the nearest.
-    const n=candidates[0];
+    const n=conversationScroller();
     if(operation === 'bottom_status') return {atBottom:n.scrollHeight-n.clientHeight-n.scrollTop<=3};
     if(operation === 'scroll_previous') { n.scrollTop=Math.max(0,n.scrollTop-n.clientHeight*0.75); return {atTop:n.scrollTop<=3}; }
     n.scrollTop=n.scrollHeight;
@@ -59,7 +65,7 @@ DOM_PROBE = r'''({source, operation}) => {
   };
   if (operation === 'structure') return {...base,
     textStructures:texts.slice(0,5).map(ancestors),imageStructures:images.slice(0,5).map(ancestors)};
-  if (operation !== 'read_visible') throw new Error('Unsupported operation');
+  if (!['read_visible','read_window'].includes(operation)) throw new Error('Unsupported operation');
   const ordered = [...texts, ...images].sort((a,b) =>
     a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
   const positions = new Map(ordered.map((n,i)=>[n,i]));
@@ -116,7 +122,7 @@ class LocalBrowser:
             raise StopAutomation('Browser unavailable; manual intervention required') from None
 
     async def execute(self, operation):
-        if operation not in {'verify', 'structure', 'read_visible', 'scroll_latest', 'bottom_status', 'scroll_previous'}:
+        if operation not in {'verify', 'structure', 'read_visible', 'scroll_latest', 'bottom_status', 'scroll_previous', 'read_window'}:
             raise StopAutomation('Operation is not permitted')
         if self.page is None or self.page.is_closed():
             raise StopAutomation('Open the local browser first')
@@ -146,7 +152,7 @@ class LocalBrowser:
             if state['atBottom']:
                 await asyncio.sleep(0.5)
                 if not (await self.execute('bottom_status'))['atBottom']: continue
-                result=await self.execute('read_visible')
+                result=await self.execute('read_window')
                 break
         else:
             raise StopAutomation('Cuộc trò chuyện chưa ổn định ở cuối trang. Kết nối lại rồi thử Play.',code='SCROLL_NOT_SETTLED')
@@ -158,7 +164,7 @@ class LocalBrowser:
         for _ in range(80):
             movement=await self.execute('scroll_previous')
             await asyncio.sleep(0.4)
-            window=await self.execute('read_visible')
+            window=await self.execute('read_window')
             entries=sorted(window['messages']+window['attachments'],key=lambda n:n['renderedOrder'])
             fresh=[n['domContainerId'] for n in entries if n['domContainerId'] not in collected]
             order=fresh+order

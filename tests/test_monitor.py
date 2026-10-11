@@ -73,6 +73,27 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.c.monitor_state['failedStage'],'SCROLLING')
         self.assertEqual(self.store.count,0)
 
+    async def test_invalid_bundle_data_has_specific_error_without_save(self):
+        original=self.browser.read_latest
+        async def incomplete(anchor=None):
+            result=await original(anchor=anchor);result['truncated']=True;return result
+        self.browser.read_latest=incomplete
+        await self.c.play();await asyncio.sleep(0.02)
+        self.assertEqual(self.c.monitor_state['errorCode'],'BUNDLE_INPUT_INVALID')
+        self.assertEqual(self.c.monitor_state['failedStage'],'BUNDLING')
+        self.assertEqual(self.store.count,0)
+        self.assertEqual(self.c.monitor_stats['checks'],0)
+
+    async def test_internal_diagnostics_do_not_echo_exception_values(self):
+        import json
+        async def broken(anchor=None): raise TypeError('private-message-and-secret')
+        self.browser.read_latest=broken
+        await self.c.play();await asyncio.sleep(0.02)
+        self.assertEqual(self.c.monitor_state['errorCode'],'INTERNAL_ERROR')
+        self.assertEqual(self.c.monitor_state['internalErrorType'],'TypeError')
+        self.assertIn('test_monitor.py:',self.c.monitor_state['internalErrorLocation'])
+        self.assertNotIn('private-message-and-secret',json.dumps(self.c.status()))
+
     async def test_expired_connection_cannot_play(self):
         self.c.until=0
         with self.assertRaises(StopAutomation): await self.c.play()

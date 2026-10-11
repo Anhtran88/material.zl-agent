@@ -146,6 +146,7 @@ class Controller:
             added=sum(k not in previous for k in current)
             changed=sum(k in previous and previous[k]!=v for k,v in current.items())
             if added or changed or not self.bundle_report:
+                self.stage('BUNDLING','Đang tạo đề xuất bundle từ nội dung mới…')
                 report={**report,'bundleEngine':build_bundles(report)}
                 self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
                 receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
@@ -189,6 +190,11 @@ class Controller:
                 await self.monitor_cycle()
                 try: await asyncio.wait_for(self.monitor_wake.wait(),timeout=15)
                 except asyncio.TimeoutError: pass
+        except BundleInputError as exc:
+            self.enabled=False
+            failed_stage=self.monitor_state.get('state')
+            self.stage('PAUSED_ERROR','Dữ liệu đọc chưa hợp lệ để tạo bundle: '+str(exc))
+            self.monitor_state.update({'errorCode':'BUNDLE_INPUT_INVALID','failedStage':failed_stage})
         except (StopAutomation,CloudStorageError) as exc:
             self.enabled=False
             code=getattr(exc,'code','AUTOMATION_PAUSED')
@@ -196,11 +202,16 @@ class Controller:
             failed_stage=self.monitor_state.get('state')
             self.stage('PAUSED_ERROR',message)
             self.monitor_state.update({'errorCode':code,'failedStage':failed_stage})
-        except Exception:
+        except Exception as exc:
             self.enabled=False
             failed_stage=self.monitor_state.get('state')
             self.stage('PAUSED_ERROR','Lỗi xử lý nội bộ. Agent đã dừng; chưa xác nhận lưu lần đọc này.')
-            self.monitor_state.update({'errorCode':'INTERNAL_ERROR','failedStage':failed_stage})
+            import traceback
+            frames=traceback.extract_tb(exc.__traceback__)
+            frame=frames[-1] if frames else None
+            self.monitor_state.update({'errorCode':'INTERNAL_ERROR','failedStage':failed_stage,
+                'internalErrorType':type(exc).__name__,
+                'internalErrorLocation':(Path(frame.filename).name+':'+str(frame.lineno)) if frame else None})
         finally:
             self.monitor_running=False
 

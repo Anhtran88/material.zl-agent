@@ -46,6 +46,24 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(await self.page.eval_on_selector('#timeline','n=>n.scrollTop'),0)
         self.assertEqual(await self.page.eval_on_selector('#timeline','n=>n.parentElement.scrollTop'),0)
 
+    async def test_automatic_window_reads_tail_not_first_200_cached_nodes(self):
+        await self.page.evaluate("""() => {
+          const timeline=document.getElementById('timeline');timeline.style.cssText='overflow-y:auto;height:90px';
+          for(let i=0;i<250;i++) {
+            const n=document.createElement('div');n.id='text-mCntr_cached'+i+'-g3144426084883145716';n.style.height='30px';
+            n.innerHTML='<div data-component="message-text-content"><span class="text">Full message '+i+'</span></div>';
+            timeline.append(n);
+          }
+        }""")
+        await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})
+        diagnostic=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_visible'})
+        self.assertTrue(diagnostic['truncated'])
+        window=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_window'})
+        self.assertFalse(window['truncated'])
+        self.assertIn('Full message 249',[m['text'] for m in window['messages']])
+        self.assertNotIn('Full message 0',[m['text'] for m in window['messages']])
+        self.assertLess(len(window['messages']),10)
+
     async def test_missing_scroller_pauses(self):
         with self.assertRaises(Exception):
             await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'scroll_latest'})
