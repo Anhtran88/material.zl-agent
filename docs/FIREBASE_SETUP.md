@@ -1,10 +1,10 @@
-# Firebase setup — pending user-owned project
+# Firebase setup — materialzlagent
 
-No Firebase project exists and this session has no authenticated Firebase/Google Cloud provisioning connection. No cloud resources, rules, billing or actual storage writes have been deployed. The committed `firebase/` folder is a deployment scaffold, not a connected application. Client rules deliberately deny all access; Admin SDK/backend security requires separate authorization tests.
+User supplied a Firebase settings screenshot on 2026-10-11 confirming project name MaterialZlAgent, project ID materialzlagent and project number 939657441007. The CLI target is recorded in firebase/.firebaserc. This session has no authenticated Firebase/Google Cloud provisioning connection. Firestore creation/location, Auth configuration, bucket and billing remain unverified. No cloud resources, rules, billing or actual storage writes have been deployed. The committed `firebase/` folder is a deployment scaffold, not a connected application. Client rules deliberately deny all access; Admin SDK/backend security requires separate authorization tests.
 
 ## Concrete initial setup
 
-1. In https://console.firebase.google.com/ create a project named **Zalo Material Delivery Manager** with a globally available project ID such as `zalo-material-delivery-<suffix>`. Analytics is optional; initially leave it disabled.
+1. Existing project: **MaterialZlAgent**, ID **materialzlagent**. Open https://console.firebase.google.com/project/materialzlagent/overview and verify you are configuring this project. Do not create a second project.
 2. Create **Cloud Firestore Standard, Native mode**, production/locked rules. Suggested region for Vietnam: **asia-southeast1 (Singapore)**, subject to the console's supported choices. Database location is an enduring decision; check before creation. Do not choose public/test rules.
 3. Enable Firebase Authentication email/password initially, create the owner user and record its UID. No password, service-account JSON or private key goes into chat or Git.
 4. Configure private Firebase Storage in a suitable colocated region. Storage/backend hosting may require **Blaze billing**; review current console pricing before linking billing. Budget alerts notify, they do not cap spending. Defer Storage activation if billing has not been approved; text-only Firestore development can proceed separately.
