@@ -72,6 +72,8 @@ class Controller:
         self.monitor_task=None
         self.monitor_wake=asyncio.Event()
         self.monitor_running=False
+        self.control_until=float("inf")
+        self.monitor_authorized_until=0
         self.monitor_sequence=0
         self.monitor_state={"state":"IDLE"}
         self.saved_report=None
@@ -82,7 +84,7 @@ class Controller:
         self.activity=deque(maxlen=20)
 
     def status(self):
-        if self.clock()>=self.until: self.enabled=False
+        if self.clock()>=self.until and not self.monitor_running: self.enabled=False
         return {'auto_setup':self.auto_setup_status,'dashboard':self.dashboard(),'monitor':self.monitor_state,'monitor_running':self.monitor_running,'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
                 'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
@@ -102,6 +104,8 @@ class Controller:
         attachments=report.get('attachments',[])
         return {'revision':self.data_revision,'sourceTitle':SOURCE['title'],
             'connectionSecondsRemaining':max(0,int(self.until-self.clock())) if self.enabled else 0,
+            'automaticReverification':self.monitor_running,
+            'controlSecondsRemaining':max(0,int(min(self.control_until,self.monitor_authorized_until)-self.clock())) if self.monitor_running else None,
             'lastCheckAt':self.monitor_state.get('checkedAt'),
             'nextCheckAt':self.monitor_state.get('nextCheckAt'),
             'stats':dict(self.monitor_stats),'activity':list(self.activity),
@@ -133,6 +137,13 @@ class Controller:
 
     async def monitor_cycle(self):
         async with self.lock:
+            if self.monitor_running and self.clock()>=self.monitor_authorized_until:
+                raise StopAutomation('Phiên điều khiển Agent đã hết. Khởi động lại Agent để tiếp tục.',code='CONTROL_SESSION_EXPIRED')
+            if self.monitor_running and self.enabled and self.clock()>=self.until-60:
+                self.stage('REVERIFYING','Đang tự xác minh lại nhóm để tiếp tục chạy…')
+                await self.browser.execute('verify')
+                if not self.enabled: raise StopAutomation('Đã ngắt kết nối.',code='DISCONNECTED')
+                self.until=self.clock()+30*60
             if not self.status()['connected']:
                 raise StopAutomation('Phiên kết nối đã hết. Bấm Kết nối đọc nhóm rồi Play.',code='CONNECTION_EXPIRED')
             prior=(self.bundle_report or {})
@@ -178,6 +189,7 @@ class Controller:
                 self.bundle_report=restored['report']
                 self.last_cloud_capture=restored['cloudStorage']
                 self.bundle_capture_path=self.last_cloud_capture['documentPath']
+            self.monitor_authorized_until=min(self.control_until,self.clock()+8*60*60)
             self.monitor_running=True
             self.monitor_wake.clear()
             self.monitor_state={'state':'CHECKING'}
@@ -264,6 +276,7 @@ def create_app(token, controller=None, port=8765, clock=None):
     controller=controller or Controller()
     clock=clock or time.monotonic
     token_until=clock()+8*60*60
+    controller.control_until=token_until
     origin=f'http://127.0.0.1:{port}'
 
     @asynccontextmanager

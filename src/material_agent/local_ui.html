@@ -20,7 +20,7 @@
 </section>
 <section><h2>Trình duyệt Zalo</h2><p>Đóng trình duyệt Agent cũ trước khi mở. Đăng nhập và chọn nhóm <b>ĐỐI CHIẾU KL- KẾ TOÁN IJC</b> thủ công.</p>
 <button id="open">1. Mở Zalo</button><button id="connect">2. Kết nối đọc nhóm</button><button id="stop" class="stop">Ngắt kết nối</button><button id="status">Kiểm tra trạng thái</button>
-<p id="state">Chưa kết nối</p><small>Kết nối đọc có hiệu lực 30 phút. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra.</small>
+<p id="state">Chưa kết nối</p><small>Play tự xác minh lại nhóm và gia hạn kết nối khi đang chạy. Khi nhóm/UI thay đổi hoặc có hộp thoại, Agent dừng để bạn kiểm tra. Phiên điều khiển tối đa 8 giờ.</small>
 <hr><p id="monitorState" role="status"></p><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button><button id="resume">Khôi phục lần đọc từ Firestore</button>
 <p id="cloudState" role="status">Firestore: chưa kiểm tra trong phiên này.</p>
 <p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận. Mốc bản đọc đã lưu được quản lý trên Firestore; chưa xác nhận đầy đủ lịch sử.</small></p></section>
@@ -124,7 +124,7 @@ const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v
 function renderDashboard(s){
  const d=s.dashboard||{},m=s.monitor||{},c=d.savedCapture||{},badge=document.getElementById('runBadge');
  if(s.auto_setup&&!document.getElementById('autoConfigState').dataset.shown){document.getElementById('autoConfigState').dataset.shown='yes';renderAutoSetup(s.auto_setup);}
- const phases={RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
+ const phases={REVERIFYING:'Đang tự xác minh lại nhóm',RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
  badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
  document.getElementById('reconnect').hidden=m.state!=='PAUSED_ERROR';
  badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');
@@ -135,7 +135,7 @@ function renderDashboard(s){
  document.getElementById('checkCount').textContent=d.stats?.checks||0;
  document.getElementById('saveCount').textContent=d.stats?.saved||0;
  document.getElementById('changeSummary').textContent=d.lastCheckAt?'Lần kiểm tra vừa rồi: '+(m.newObservedContainers||0)+' mục mới · '+(m.changedObservedContainers||0)+' mục thay đổi (tin hoặc thông tin ảnh).':'Chưa hoàn tất lần kiểm tra.';
- document.getElementById('connectionCountdown').textContent='Thời gian kết nối còn lại: '+Math.ceil((d.connectionSecondsRemaining||0)/60)+' phút. Số liệu trong phiên; bản lưu giữ trên Firestore.';
+ document.getElementById('connectionCountdown').textContent=s.monitor_running?'Kết nối tự gia hạn sau khi xác minh nhóm · phiên điều khiển còn '+Math.ceil((d.controlSecondsRemaining||0)/60)+' phút.':'Kết nối còn '+Math.ceil((d.connectionSecondsRemaining||0)/60)+' phút · bấm Play để chạy tự động.';
  document.getElementById('savedStatus').textContent=c.confirmed?'✓ Đã xác nhận lưu dữ liệu Zalo trên Firestore · '+timeLabel(c.commitTime):'Chưa xác nhận bản lưu dữ liệu Zalo. Bản kiểm tra kết nối không chứa tin nhắn.';
  document.getElementById('savedMessages').textContent=c.messages||0;document.getElementById('savedImages').textContent=c.imageReferences||0;
  document.getElementById('savedPath').textContent=c.documentPath||'';

@@ -125,3 +125,50 @@ class CatchupTests(unittest.IsolatedAsyncioTestCase):
                 return {'messages':[{'domContainerId':'new','text':'full','renderedOrder':0}], 'attachments':[]}
         with patch('asyncio.sleep',new=AsyncMock()):
             with self.assertRaises(StopAutomation): await Port().read_latest(anchor='missing')
+
+class ContinuousMonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self): await MonitorTests.asyncSetUp(self)
+    async def asyncTearDown(self): await self.c.pause()
+    async def test_running_monitor_renews_after_expiry_without_status_disabling(self):
+        now=[100.0];self.c.clock=lambda:now[0];self.c.until=110
+        self.c.monitor_running=True;self.c.monitor_authorized_until=40000
+        now[0]=200
+        self.assertTrue(self.c.status()['connected'])
+        await self.c.monitor_cycle()
+        self.assertIn('verify',self.browser.calls)
+        self.assertEqual(self.c.until,200+1800)
+        self.assertEqual(self.store.count,1)
+        now[0]=2100
+        await self.c.monitor_cycle()
+        self.assertEqual(self.c.until,2100+1800)
+        self.assertEqual(self.store.count,1)
+    async def test_reverification_failure_never_saves_or_renews(self):
+        self.c.monitor_running=True;self.c.monitor_authorized_until=self.c.clock()+10000
+        self.c.until=self.c.clock()-1;original=self.c.until;self.browser.fail=True
+        await self.c.monitor_loop()
+        self.assertFalse(self.c.enabled);self.assertEqual(self.c.until,original)
+        self.assertEqual(self.store.count,0)
+    async def test_control_expiry_stops_without_renewal(self):
+        self.c.monitor_running=True;self.c.monitor_authorized_until=self.c.clock()-1
+        await self.c.monitor_loop()
+        self.assertEqual(self.c.monitor_state['errorCode'],'CONTROL_SESSION_EXPIRED')
+        self.assertFalse(self.c.enabled);self.assertEqual(self.store.count,0)
+    async def test_cloud_failure_during_running_monitor_keeps_last_confirmed_capture(self):
+        from unittest.mock import AsyncMock
+        from material_agent.firestore_capture import CloudStorageError
+        await self.c.monitor_cycle()
+        confirmed=self.c.saved_receipt
+        self.browser.text+=' bổ sung'
+        self.store.save=AsyncMock(side_effect=CloudStorageError('UNAVAILABLE'))
+        self.c.monitor_running=True;self.c.monitor_authorized_until=self.c.clock()+10000
+        await self.c.monitor_loop()
+        self.assertEqual(self.c.monitor_state['errorCode'],'UNAVAILABLE')
+        self.assertEqual(self.c.monitor_state['failedStage'],'SAVING')
+        self.assertFalse(self.c.enabled)
+        self.assertIs(self.c.saved_receipt,confirmed)
+        self.assertEqual(self.c.monitor_stats['saved'],1)
+
+    async def test_expired_paused_session_still_requires_connect(self):
+        self.c.monitor_running=False;self.c.until=0
+        self.assertFalse(self.c.status()['connected'])
+        with self.assertRaises(StopAutomation): await self.c.play()
