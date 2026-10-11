@@ -19,6 +19,7 @@ from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
 from .bundle_engine import build_bundles, review_bundles, BundleInputError
 from .extraction import extract_report
+from .slip_ocr import LocalOCR, enrich_images, OCR_VERSION
 from .firestore_capture import CloudStorageError
 from .recovery_store import RecoverableFirestoreStore
 from .local_browser import LocalBrowser, SOURCE
@@ -98,6 +99,7 @@ class Controller:
         self.auto_setup_status=None
         self.monitor_stats={'checks':0,'unchanged':0,'saved':0}
         self.activity=deque(maxlen=20)
+        self.ocr=LocalOCR()
 
     def status(self):
         if self.clock()>=self.until and not self.monitor_running: self.enabled=False
@@ -131,7 +133,10 @@ class Controller:
                 'messages':len(report.get('messages',[])),
                 'imageContainers':len(attachments),
                 'imageReferences':sum(len(a.get('images',[])) for a in attachments),
-                'originalImagesSaved':False,'slipDatesExtracted':False}}
+                'originalImagesSaved':False,
+                'ocrImagesRead':sum(i.get('ocr',{}).get('status')=='READ' for a in attachments for i in a.get('images',[])),
+                'slipDateCandidateCount':sum(c.get('status')=='CANDIDATE_NEEDS_REVIEW' for a in attachments for i in a.get('images',[]) for c in i.get('ocr',{}).get('confirmationDateCandidates',[])),
+                'slipDatesExtracted':any(c.get('status')=='CANDIDATE_NEEDS_REVIEW' for a in attachments for i in a.get('images',[]) for c in i.get('ocr',{}).get('confirmationDateCandidates',[]))}}
 
     def stage(self, state, message):
         self.monitor_state={**self.monitor_state,'state':state,'message':message,'nextCheckAt':None}
@@ -145,7 +150,7 @@ class Controller:
                 for item in report.get(name,[]): target[(source,item['domContainerId'])]=item
         rows=[]
         for report in self.group_reports.values():
-            rows.extend(extract_report(report)['rows'])
+            rows.extend((report.get('extraction') or extract_report(report))['rows'])
         return {'messages':list(messages.values()),'attachments':list(attachments.values()),'extraction':{'rows':rows}}
 
     def record_capture(self, report, receipt):
@@ -157,6 +162,10 @@ class Controller:
             records={item['domContainerId']:item for item in previous.get(name,[])}
             records.update({item['domContainerId']:item for item in report.get(name,[])})
             merged[name]=list(records.values())
+        previous_extraction=(previous.get('extraction') or extract_report(previous)) if previous else {'rows':[]}
+        extracted={row['domContainerId']:row for row in previous_extraction['rows']}
+        extracted.update({row['domContainerId']:row for row in (report.get('extraction') or extract_report(report))['rows']})
+        merged['extraction']={**(report.get('extraction') or {}),'rows':list(extracted.values())}
         self.group_reports[report['candidateSourceId']]=merged
         self.group_receipts[report['candidateSourceId']]=receipt
         self.data_revision+=1
@@ -167,6 +176,8 @@ class Controller:
         for field in ('messages','attachments'):
             for item in report.get(field,[]):
                 value={k:v for k,v in item.items() if k!='renderedOrder'}
+                if field=='attachments':
+                    value['images']=[{k:v for k,v in image.items() if k!='ocr'} for image in value.get('images',[])]
                 records[(field,item['domContainerId'])]=json.dumps(value,sort_keys=True,ensure_ascii=False)
         return records
 
@@ -191,9 +202,13 @@ class Controller:
             previous=self.observations(self.bundle_report or {})
             added=sum(k not in previous for k in current)
             changed=sum(k in previous and previous[k]!=v for k,v in current.items())
-            if added or changed or not self.bundle_report:
+            pipeline_changed=(self.bundle_report or {}).get('imageExtraction',{}).get('rulesetVersion')!=OCR_VERSION
+            if added or changed or not self.bundle_report or pipeline_changed:
                 self.stage('BUNDLING','Đang tạo đề xuất bundle từ nội dung mới…')
                 report={**report,'bundleEngine':build_bundles(report,allowed_source=self.active_source)}
+                self.stage('READING_SLIPS','Đang đọc ảnh phiếu bằng OCR trên máy…')
+                report=await enrich_images(report,self.browser,self.ocr,self.bundle_report)
+                await self.browser.execute('verify')
                 report['extraction']=extract_report(report)
                 self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
                 receipt=await self.capture_store.save(report,operation='read_visible',session_id=self.session_id)
@@ -206,11 +221,11 @@ class Controller:
             self.monitor_stats['checks']+=1
             self.monitor_stats['unchanged']+=int(not added and not changed)
             overlap=bool(current.keys() & previous.keys())
-            self.monitor_state={'state':'SAVED' if added or changed else 'NO_CHANGE',
+            self.monitor_state={'state':'SAVED' if added or changed or pipeline_changed else 'NO_CHANGE',
                 'sequence':self.monitor_sequence,'overlapWithSavedWindow':overlap,
                 'checkedAt':time.time(),'nextCheckAt':time.time()+15,'newObservedContainers':added,'changedObservedContainers':changed,
                 'coverage':'latest rendered window; historical gap not verified',
-                'message':'Đã lưu dữ liệu mới/thay đổi' if added or changed else 'Không có thay đổi trong vùng cuối đã kiểm tra'}
+                'message':'Đã lưu dữ liệu mới/thay đổi' if added or changed else ('Đã lưu kết quả trích xuất theo phiên bản mới' if pipeline_changed else 'Không có thay đổi trong vùng cuối đã kiểm tra')}
             self.activity.appendleft({'at':time.time(),'state':self.monitor_state['state'],
                 'message':self.monitor_state['message']+' · '+str(added)+' mục mới, '+str(changed)+' mục thay đổi'})
 
@@ -320,6 +335,8 @@ class Controller:
                 result=await self.browser.execute(operation)
                 if operation=='read_visible':
                     result={**result,'bundleEngine':build_bundles(result,allowed_source=self.active_source)}
+                    result=await enrich_images(result,self.browser,self.ocr)
+                    await self.browser.execute('verify')
                     result['extraction']=extract_report(result)
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
                 self.last_cloud_capture=receipt

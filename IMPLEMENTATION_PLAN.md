@@ -68,3 +68,6 @@ Multi-group update: checkboxes for both user-named groups, cloud-persisted added
 
 ## Current step — M4 text phase
 User confirmed multi-group Play success. M4 begins with evidence-backed message extraction and a shared structured table, cloud-only persisted alongside new captures. See docs/MILESTONE_4_REPORT.md. The slip date remains unknown until OCR/document evidence exists; image OCR and PDF/Word/Excel providers remain within the M4 gate. Do not start M5 or mark M4 fully accepted yet.
+
+## M4 photo OCR phase — 2026-10-12
+Fixed browser blob acquisition and local in-memory OCR now enrich new captures automatically; dates have explicit-label evidence and remain candidates until association/date validation. Shared dashboard exposes OCR counts and proposed dates. Software dependencies install via Start-LocalAgent.ps1. No provider data transmission or local image/report files. Actual Windows receipt accuracy and PDF/Word/Excel integration remain within M4 acceptance; M5 remains blocked by that gate. See docs/MILESTONE_4_REPORT.md for precise limits.

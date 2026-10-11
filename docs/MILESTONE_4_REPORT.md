@@ -1,4 +1,4 @@
-# Milestone 4 — extraction implementation, text phase
+# Milestone 4 — message extraction and local photo OCR
 
 The user confirmed the multi-group Play flow works on Windows. M4 now extracts structured fields automatically before each new read_visible cloud save. No AI provider requests or local business files are introduced.
 
@@ -6,6 +6,19 @@ Implemented: full original text, every slash-separated full-year date (calendar 
 
 The shared dashboard displays these observations together for all groups. Read captures persist extraction in canonical reportJson using the existing durable job/checkpoint transaction. Cloud-restored earlier captures can be parsed in memory for display; they are not rewritten or claimed to contain a persisted extraction revision. New captures persist ruleset m4-text-v1. No-change polling still performs no write.
 
-Remaining M4 scope: controlled image byte acquisition and OCR, original document providers PDF/Word/Excel, confirmation-date evidence on the slip and real-world accuracy acceptance. Current image metadata cannot substantiate a slip date. slipConfirmationDate stays null / NOT_READ; message dates are never substituted. M4 is NOT fully accepted, and M5 does not start.
+Remaining M4 scope: original document providers PDF/Word/Excel and real-world accuracy acceptance. Local photo OCR implementation is described below; its results remain date/association candidates, not finalized confirmation. slipConfirmationDate stays null; message dates are never substituted. M4 is NOT fully accepted, and M5 does not start.
 
 Validation: seven focused tests cover actual example quantities, exact evidence spans, invalid dates, decimal ambiguity, ordinary chatter, multiple projects/dates, revision identity, and Firestore REST/CAS fault-model roundtrip plus duplicate reuse. These are automated fixture checks, not live Windows/Zalo/Firestore verification.
+
+## Local photo OCR phase — 2026-10-12
+
+Implemented a fixed browser image reader for already loaded image elements in the verified selected source. It reads existing chat.zalo.me blob URLs only, checks source before/after acquisition and again before saving, bounds bytes at 8 MiB, and never issues arbitrary media URL requests. Image data travels in memory to the local RapidOCR runtime. PNG/JPEG/WebP are decoded with Pillow (20 MP input bound, 2200px inference resize), using packaged OCR models; no AI API, temporary image file, or business-data local fallback is used. Runtime packages/models are installed locally as software dependencies.
+
+Each image observation records OCR status, bounded text/boxes/confidence, a SHA256 of the observed blob bytes (explicitly NOT a verified original hash), and explicit confirmation-date candidates. Recognized labels: ngày xác nhận, ngày giao nhận, ngày nhận hàng. Slash/dot/hyphen dates and ngày/tháng/năm forms require four-digit years and calendar validity. Unlabelled issue dates and photo watermarks do not establish confirmation. Confidence is an OCR score, not a probability of correct delivery. Dates from low confidence/conflicting readings remain review observations; displayed business dates contain no time. Labels not supported or obscured remain unknown, rather than substituted with chat dates.
+
+OCR candidates remain attached to their image evidence. Any association to a message remains an unverified M2 candidate; slipConfirmationDate stays null, accountingActive false. The common table displays proposed dates and source OCR details. Dashboard adds read-image/date-candidate counts. At most 40 images and a bounded text budget are attempted per capture; unloaded, evicted, unsupported or over-limit images retain explicit statuses. OCR failures do not discard raw messages or advance a confirmed-business cursor. Cache reuse is based on provisional DOM identity/dimensions/load metadata, not proof of immutable original bytes.
+
+Updated Play performs one extraction-version upgrade for a restored earlier snapshot, then ignores derived OCR fields when comparing DOM observations so unchanged polling does not create duplicate writes. Successfully read unchanged image observations are reused within subsequent captures. Cloud-backed summaries retain prior extraction rows in the current process; they do not claim full historical cloud-query coverage after restart.
+
+Automated real-Chromium/blob + actual local OCR + REST/CAS cloud fault-model test passes, including restored date evidence and no-change polling without additional cloud commits. Real Windows slips and real cloud receipt still need verification after installing updated dependencies. Local OCR Latin recognition is tested with a clear synthetic receipt, not a representative accuracy corpus of Vietnamese handwritten receipts. PDF/Word/Excel acquisition/providers and full M4 acceptance remain pending. M5 is not started.
+OCR JSON evidence is additionally capped at 160,000 UTF-8 bytes per capture, including reused OCR observations. Over-budget image observations retain BATCH_LIMIT_NEEDS_REVIEW. Message-level date candidates reference the image OCR line indices and hash instead of duplicating its OCR text; raw OCR label/date lines remain on the source image observation. The existing full 700,000-byte capture ceiling still applies to the entire snapshot, including original message/bundle text.

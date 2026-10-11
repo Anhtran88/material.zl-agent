@@ -14,8 +14,8 @@
 <div class="metric"><small>Lần lưu mới trong vòng Play</small><strong id="saveCount">0</strong></div>
 </div><p id="changeSummary">Chưa kiểm tra tin mới.</p><small id="connectionCountdown"></small>
 <h3>Bảng tổng hợp dữ liệu Zalo</h3><p id="savedStatus" role="status">Chưa xác nhận bản dữ liệu Zalo. Kiểm tra kết nối Firestore không phải bản lưu tin nhắn.</p>
-<div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bảng tổng hợp</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bảng tổng hợp</small><strong id="savedImages">0</strong></div></div>
-<p id="savedPath" class="path"></p><p><small>Ảnh hiện được lưu dưới dạng thông tin tham chiếu, chưa có file ảnh gốc. Ngày xác nhận trên phiếu chưa được trích xuất.</small></p>
+<div class="dashboard-grid"><div class="metric"><small>Tin nhắn trong bảng tổng hợp</small><strong id="savedMessages">0</strong></div><div class="metric"><small>Tham chiếu ảnh trong bảng tổng hợp</small><strong id="savedImages">0</strong></div><div class="metric"><small>Ảnh đã đọc OCR</small><strong id="ocrImagesRead">0</strong></div><div class="metric"><small>Ngày phiếu đề xuất · cần đối chiếu</small><strong id="slipDateCount">0</strong></div></div>
+<p id="savedPath" class="path"></p><p><small>Ảnh hiện được lưu dưới dạng thông tin tham chiếu, chưa có file ảnh gốc. OCR đọc ảnh phiếu trên máy; ngày đề xuất cần đối chiếu và chưa xác nhận giao nhận.</small></p>
 <h3>Thông tin vật tư trích xuất</h3><p><small>Giữ từng khối lượng riêng; ngày trong tin nhắn chưa phải ngày xác nhận trên phiếu.</small></p><div style="overflow-x:auto"><table id="extractionTable"><thead><tr><th>Ngày tin nhắn</th><th>Vật tư</th><th>Công trình</th><th>Khối lượng</th><th>Ngày xác nhận phiếu</th><th>Kiểm tra</th></tr></thead><tbody></tbody></table></div><div id="captureMessages"><p>Chưa có nội dung đã lưu trong phiên. Play hoặc “Khôi phục lần đọc từ Firestore” để tải bản lưu trước.</p></div>
 <details><summary>Thông tin ảnh đã ghi nhận</summary><div id="captureImages"></div></details>
 <details open><summary>Hoạt động gần đây trong phiên</summary><ol id="activity"><li>Chưa chạy.</li></ol></details>
@@ -146,11 +146,11 @@ const timeLabel=v=>{if(!v)return '—';const date=new Date(typeof v==='number'?v
 function renderDashboard(s){
  const d=s.dashboard||{},m=s.monitor||{},c=d.savedCapture||{},badge=document.getElementById('runBadge');
  if(s.auto_setup&&!document.getElementById('autoConfigState').dataset.shown){document.getElementById('autoConfigState').dataset.shown='yes';renderAutoSetup(s.auto_setup);}
- const phases={SELECTING_GROUP:'Đang chuyển nhóm',REVERIFYING:'Đang tự xác minh lại nhóm',RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
+ const phases={SELECTING_GROUP:'Đang chuyển nhóm',REVERIFYING:'Đang tự xác minh lại nhóm',RESTORING:'Khôi phục mốc đã lưu',CHECKING:'Chuẩn bị kiểm tra',SCROLLING:'Đang cuộn / dò mốc',COMPARING:'Đang đối chiếu',READING_SLIPS:'Đang đọc ảnh phiếu bằng OCR',BUNDLING:'Đang tạo bundle',SAVING:'Đang lưu Firestore',SAVED:'Đang chạy · vừa lưu',NO_CHANGE:'Đang chạy · chờ tin mới',PAUSED:'Đã tạm dừng',PAUSED_ERROR:'Đã dừng vì lỗi'};
  badge.textContent=s.monitor_running?(phases[m.state]||'Đang chạy'):m.state==='PAUSED_ERROR'?phases[m.state]:s.connected?'Đã kết nối · chưa chạy Play':'Chưa kết nối / phiên đã hết';
  document.getElementById('reconnect').hidden=m.state!=='PAUSED_ERROR';
  badge.className='badge '+(m.state==='PAUSED_ERROR'?'error':s.monitor_running?'running':'');
- document.getElementById('stageDetail').textContent=(m.errorCode?'Mã lỗi: '+m.errorCode+(m.internalErrorType?' ('+m.internalErrorType+(m.internalErrorLocation?' · '+m.internalErrorLocation:'')+')':'')+' · bước: '+({SELECTING_GROUP:'chuyển nhóm',SCROLLING:'cuộn / dò mốc',COMPARING:'đối chiếu',BUNDLING:'tạo bundle',SAVING:'lưu Firestore',CHECKING:'kiểm tra'}[m.failedStage]||m.failedStage||'kiểm tra')+' · ':'')+(m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.');
+ document.getElementById('stageDetail').textContent=(m.errorCode?'Mã lỗi: '+m.errorCode+(m.internalErrorType?' ('+m.internalErrorType+(m.internalErrorLocation?' · '+m.internalErrorLocation:'')+')':'')+' · bước: '+({SELECTING_GROUP:'chuyển nhóm',SCROLLING:'cuộn / dò mốc',COMPARING:'đối chiếu',READING_SLIPS:'đọc phiếu',BUNDLING:'tạo bundle',SAVING:'lưu Firestore',CHECKING:'kiểm tra'}[m.failedStage]||m.failedStage||'kiểm tra')+' · ':'')+(m.message||'Bấm Play sau khi kết nối nhóm để bắt đầu kiểm tra tự động.');
  document.getElementById('sourceTitle').textContent=d.sourceTitle||'—';
  document.getElementById('checkedTime').textContent=timeLabel(d.lastCheckAt);
  document.getElementById('nextCheck').textContent=s.monitor_running&&d.nextCheckAt?Math.max(0,Math.ceil(d.nextCheckAt-Date.now()/1000))+' giây':'—';
@@ -160,6 +160,7 @@ function renderDashboard(s){
  document.getElementById('connectionCountdown').textContent=s.monitor_running?'Kết nối tự gia hạn sau khi xác minh nhóm · phiên điều khiển còn '+Math.ceil((d.controlSecondsRemaining||0)/60)+' phút.':'Kết nối còn '+Math.ceil((d.connectionSecondsRemaining||0)/60)+' phút · bấm Play để chạy tự động.';
  document.getElementById('savedStatus').textContent=c.confirmed?'✓ Đã xác nhận lưu dữ liệu Zalo trên Firestore · '+timeLabel(c.commitTime):'Chưa xác nhận bản lưu dữ liệu Zalo. Bản kiểm tra kết nối không chứa tin nhắn.';
  document.getElementById('savedMessages').textContent=c.messages||0;document.getElementById('savedImages').textContent=c.imageReferences||0;
+ document.getElementById('ocrImagesRead').textContent=c.ocrImagesRead||0;document.getElementById('slipDateCount').textContent=c.slipDateCandidateCount||0;
  document.getElementById('savedPath').textContent=c.documentPath||'';
  const activity=document.getElementById('activity');activity.replaceChildren();
  for(const e of d.activity||[]){const li=document.createElement('li');li.textContent=timeLabel(e.at)+' · '+e.message;activity.append(li);}
@@ -170,7 +171,7 @@ function renderSaved(data){
  const body=document.querySelector('#extractionTable tbody');body.replaceChildren();
  for(const row of data.aggregate?.extraction?.rows||data.extraction?.rows||[]){
   const tr=document.createElement('tr');
-  const fields=[row.messageDates.map(x=>x.raw).join('; ')||'Chưa xác định',row.materials.map(x=>x.value).join('; ')||'Chưa xác định',row.projects.map(x=>x.value).join('; ')||'Chưa xác định',row.quantities.map(x=>(x.value??x.raw)+' '+x.unit).join('; ')||'Chưa xác định','Chưa đọc phiếu',row.missingFields.length?'Cần kiểm tra: '+row.missingFields.join(', '):'Đã trích xuất nội dung'];
+  const fields=[row.messageDates.map(x=>x.raw).join('; ')||'Chưa xác định',row.materials.map(x=>x.value).join('; ')||'Chưa xác định',row.projects.map(x=>x.value).join('; ')||'Chưa xác định',row.quantities.map(x=>(x.value??x.raw)+' '+x.unit).join('; ')||'Chưa xác định',(row.slipDateCandidates||[]).map(x=>'Đề xuất: '+(x.displayDate||'Ngày không hợp lệ')).join('; ')|| (row.slipDateStatus==='NO_EXPLICIT_CONFIRMATION_DATE'?'Không thấy nhãn ngày xác nhận':'Chưa đọc được phiếu'),row.slipDateCandidates?.length?'Ngày phiếu / ghép ảnh cần đối chiếu':row.missingFields.length?'Cần kiểm tra: '+row.missingFields.join(', '):'Đã trích xuất nội dung'];
   for(const value of fields){const td=document.createElement('td');td.textContent=value;tr.append(td);}body.append(tr);
  }
 
@@ -181,7 +182,8 @@ function renderSaved(data){
  }
  if(!(data.aggregate?.messages||data.messages||[]).length){const p=document.createElement('p');p.textContent='Bản lưu này chưa có tin nhắn văn bản.';messages.append(p);}
  const images=document.getElementById('captureImages');images.replaceChildren();
- for(const a of data.aggregate?.attachments||data.attachments||[]){for(const image of a.images||[]){const p=document.createElement('p');p.className='path';p.textContent=(image.domImageId||a.domContainerId)+' · '+(image.width||0)+' × '+(image.height||0)+' · '+(image.loaded?'đã hiển thị trong Zalo':'chưa tải xong trong Zalo')+' · chưa lưu file ảnh gốc';images.append(p);}}
+ for(const a of data.aggregate?.attachments||data.attachments||[]){for(const image of a.images||[]){const p=document.createElement('p');p.className='path';p.textContent=(image.domImageId||a.domContainerId)+' · '+(image.width||0)+' × '+(image.height||0)+' · '+(image.loaded?'đã hiển thị trong Zalo':'chưa tải xong trong Zalo')+' · chưa lưu file ảnh gốc';images.append(p);
+ const ocr=image.ocr;if(ocr){const info=document.createElement('p');const labels={READ:'Đã đọc',OCR_NOT_INSTALLED:'Chưa cài OCR — chạy lại Start-LocalAgent.ps1',OCR_FAILED_NEEDS_REVIEW:'Không đọc được — cần đối chiếu',IMAGE_UNAVAILABLE:'Ảnh không còn trong trang hoặc chưa có dữ liệu blob',IMAGE_NOT_LOADED:'Ảnh chưa tải xong',BATCH_LIMIT_NEEDS_REVIEW:'Vượt giới hạn OCR của lần đọc',IMAGE_READER_UNAVAILABLE:'Chưa có bộ đọc ảnh'};info.textContent='OCR: '+(labels[ocr.status]||ocr.status)+' · '+(ocr.confirmationDateCandidates||[]).map(c=>(c.displayDate||'Ngày không hợp lệ')+' · '+c.status).join('; ');images.append(info);if(ocr.lines?.length){const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');summary.textContent='Nội dung đọc từ phiếu';text.textContent=ocr.lines.map(l=>l.text).join('\n');details.append(summary,text);images.append(details);}}}}
 }
 async function refreshDashboard(){
  if(monitorFetching)return;monitorFetching=true;

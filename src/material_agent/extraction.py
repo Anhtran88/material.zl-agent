@@ -64,6 +64,26 @@ def extract_message(message, source):
 
 
 def extract_report(report):
-    return {'schemaVersion':1,'rulesetVersion':VERSION,'rows':[
-        extract_message(message,report['candidateSourceId']) for message in report.get('messages',[])],
-        'slipOcrImplemented':False,'accountingActive':False}
+    from .bundle_engine import identity
+    rows=[extract_message(message,report['candidateSourceId']) for message in report.get('messages',[])]
+    links=(report.get('bundleEngine') or {}).get('links',[])
+    for message,row in zip(report.get('messages',[]),rows):
+        message_id=identity('msg',report['candidateSourceId'],message['domContainerId'])
+        candidates=[];observed=False
+        for attachment in report.get('attachments',[]):
+            attachment_id=identity('att',report['candidateSourceId'],attachment['domContainerId'])
+            link=next((x for x in links if x['attachmentId']==attachment_id),None)
+            association=next((c for c in (link or {}).get('candidates',[]) if c['messageId']==message_id),None)
+            if not association: continue
+            for image in attachment.get('images',[]):
+                ocr=image.get('ocr',{})
+                observed=observed or ocr.get('status')=='READ'
+                for candidate in ocr.get('confirmationDateCandidates',[]):
+                    summary={k:v for k,v in candidate.items() if k not in {'rawLabel','rawDateLine'}}
+                    candidates.append({**summary,'domContainerId':attachment['domContainerId'],
+                        'domImageId':image.get('domImageId'),'observedImageSha256':ocr.get('observedImageSha256'),
+                        'associationStatus':'UNVERIFIED_CANDIDATE','associationScore':association['score']})
+        row['slipDateCandidates']=candidates
+        row['slipDateStatus']='CANDIDATE_NEEDS_REVIEW' if candidates else ('NO_EXPLICIT_CONFIRMATION_DATE' if observed else 'NOT_READ')
+    return {'schemaVersion':1,'rulesetVersion':VERSION,'rows':rows,
+        'slipOcrImplemented':True,'accountingActive':False}

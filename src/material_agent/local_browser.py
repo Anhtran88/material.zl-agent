@@ -102,6 +102,27 @@ DOM_PROBE = r'''({source, operation}) => {
 }'''
 
 
+IMAGE_BYTES = r'''async ({source, containerId, imageId}) => {
+  const parent=document.getElementById(containerId);
+  const matches=parent ? [...parent.querySelectorAll('img[data-z-element-type="image"]')].filter(n=>n.id===imageId) : [];
+  const img=matches.length===1 ? matches[0] : null;
+  if(!parent || !parent.id.startsWith('image-mCntr_') || !parent.id.endsWith('-'+source.dom_id) || !img) return {status:'UNAVAILABLE'};
+  if(!img.complete || !img.naturalWidth) return {status:'UNAVAILABLE'};
+  const url=img.currentSrc || img.src;
+  // Read only an existing browser-owned blob; never fetch arbitrary remote URLs.
+  if(!url.startsWith('blob:https://chat.zalo.me/')) return {status:'UNAVAILABLE'};
+  const response=await fetch(url);
+  if(!response.ok) return {status:'UNAVAILABLE'};
+  const mime=(response.headers.get('content-type')||'').split(';')[0];
+  if(!['image/png','image/jpeg','image/webp','application/octet-stream',''].includes(mime)) return {status:'UNAVAILABLE'};
+  const reader=response.body.getReader();const chunks=[];let size=0;
+  while(true){const {done,value}=await reader.read();if(done)break;
+    size+=value.length;if(size>8*1024*1024){await reader.cancel();return {status:'LIMIT'};}chunks.push(value);}
+  let binary='';for(const chunk of chunks){for(let i=0;i<chunk.length;i+=8192)binary+=String.fromCharCode(...chunk.subarray(i,i+8192));}
+  return {status:'READ',base64:btoa(binary)};
+}'''
+
+
 class LocalBrowser:
     def __init__(self):
         self.context = self.page = self.playwright = None
@@ -142,6 +163,25 @@ class LocalBrowser:
             for code,message in errors.items():
                 if 'ZMA:'+code in str(exc): raise StopAutomation(message,code=code) from None
             raise StopAutomation('Source/UI/security verification failed; reconnect locally after checking browser',code='BROWSER_VERIFICATION_FAILED') from None
+
+    async def image_bytes(self, container_id, image_id):
+        import base64
+        import asyncio
+        if not isinstance(container_id,str) or not container_id.endswith('-'+self.source['dom_id']):
+            raise StopAutomation('Nguồn ảnh không đúng nhóm.',code='SOURCE_MISMATCH')
+        if not isinstance(image_id,str) or len(image_id)>500: return None
+        await self.execute('verify')
+        try:
+            result=await asyncio.wait_for(self.page.evaluate(IMAGE_BYTES,{'source':self.source,
+                'containerId':container_id,'imageId':image_id}),timeout=10)
+        except Exception:
+            await self.execute('verify')
+            return None
+        await self.execute('verify')
+        if result.get('status')!='READ': return None
+        try: data=base64.b64decode(result['base64'],validate=True)
+        except (ValueError,KeyError): return None
+        return data if len(data)<=8*1024*1024 else None
 
     async def select_group(self, group):
         import asyncio
