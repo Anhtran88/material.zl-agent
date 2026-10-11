@@ -7,3 +7,7 @@ profiles/
 logs/
 *.db
 config/local*.json
+node_modules/
+*.whl
+build/
+dist/

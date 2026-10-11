@@ -39,3 +39,9 @@ Cloud execution requires the environment owner to configure permitted Zalo desti
 ## Automated local DOM inspection (replaces manual F12 screenshots)
 
 Close the manual login browser using Enter in its PowerShell window before starting a second process on the same profile. Run `.\.venv\Scripts\python.exe -m material_agent.inspect_dom`. Open the allowed group manually, handle any login/security challenges manually, then press Enter. The helper checks the user-observed title and candidate group ID, then reads only DOM structures for rendered text/image containers with that group ID. It performs no clicks, scrolling, downloads or Zalo writes and reads no cookies, storage, image URLs, message text or application internal state. It exports `%LOCALAPPDATA%\ZaloMaterialAgent\cache\{UUID}\dom-report.json` and opens its folder. Review/share this structure-only report for adapter mapping; keep profile and source evidence local. Captured ancestor attributes are diagnostic metadata; this is not timeline/attachment acceptance or an assertion of ID stability. Changed selectors fail closed.
+
+## Local Agent + automatic 9Router setup
+
+Download the latest project, close the earlier Agent browser, then run `scripts\Start-LocalAgent.cmd` on Windows x64. The bootstrap installs a checksum-verified portable Node runtime and locked 9Router version, protects local credentials, starts two loopback services and opens the control page. Use **Mở Zalo → Kết nối đọc nhóm → Kiểm tra DOM**. Use **Duyệt nhà cung cấp AI trong 9Router** to approve your own provider/account; no source data is sent to AI by this version. You can export the DOM report without manually using F12.
+
+See [Local Agent guide](docs/LOCAL_AGENT.md) for MCP client configuration, provider setup, stopping, security controls and validation limits. A compatible local MCP client can use the bridge; the current cloud chat is not connected to your desktop automatically.

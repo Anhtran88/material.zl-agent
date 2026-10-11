@@ -6,10 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "zalo-material-agent"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["playwright>=1.48,<2"]
+dependencies = ["playwright>=1.48,<2", "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "httpx>=0.27,<1", "mcp>=1.20,<2"]
 
 [project.scripts]
 zalo-poc = "material_agent.poc:main"
+zalo-local-agent = "material_agent.local_agent:main"
+zalo-mcp-bridge = "material_agent.mcp_bridge:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+material_agent = ["local_ui.html"]
