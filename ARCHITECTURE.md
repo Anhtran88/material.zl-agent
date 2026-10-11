@@ -1,6 +1,6 @@
 # Zalo Material Delivery Manager — Architecture
 
-Status: design baseline; only Milestone 1 implementation is authorized here. Live Zalo acceptance remains pending. Accuracy > traceability > integrity > automation > speed.
+Status: design baseline; Milestone 1 read PoC accepted in a user-approved reduced scope on 2026-10-11 (see IMPLEMENTATION_PLAN.md). Full extraction and accounting remain unimplemented. Accuracy > traceability > integrity > automation > speed.
 
 ## Requirements and risks
 Zalo is a read-only source restricted to a user-maintained Allow List. Timeline is primary; media library is recovery only. No send, reply, react, forward, edit, delete, recall or upload capability is exposed. Manual login is required; QR, CAPTCHA, logout, verification and ambiguous UI stop automation. Opening a conversation may mark messages read in Zalo; this is a platform side effect that must be disclosed during live acceptance. We cannot claim zero server writes merely from a read-only application API.
@@ -53,3 +53,6 @@ M1 contract tests plus a real headed-browser dataset under an explicit Allow Lis
 
 ## User-requested Local Agent/MCP/9Router connection extension
 See docs/LOCAL_AGENT.md. Loopback-only HTTP Local Agent with random expiring bearer credential, Windows DPAPI, explicit local read enable, serialized bounded DOM operations and revocation. Local stdio MCP forwards five fixed operations; no arbitrary execution, selectors, clicks, remote tunnel or whole desktop API. Existing cloud chat cannot dynamically attach this local server. Pinned standalone 9Router bootstrap owns its subprocess/data/credentials, uses reviewed management APIs, requires provider approval, and verifies models endpoint without source/completion requests. It does not advance bundle/extraction milestones. Captures remain RAW and incomplete until live timeline identity/sender/time/attachment coverage is proven. Read/AI actions have no business transaction or final checkpoint.
+
+## User-approved scope revision — 2026-10-11
+The user waived complete history, sender/message-time completeness and original attachment download/hash as M1 acceptance blockers. Primary business evidence is message content and the confirmation date/time explicitly shown on a delivery slip. Preserve that field and its provenance independently; a date-only value must not acquire an invented time. Missing or conflicting slip confirmation values remain unknown/reviewable, with no substitution from chat timestamps or DOM IDs. These waivers permit the reduced read PoC acceptance; they do not assert that document extraction already works or change later publication/archive integrity requirements. Allowlisting, read-only behavior, manual authentication and safe checkpoint/accounting rules remain in force.

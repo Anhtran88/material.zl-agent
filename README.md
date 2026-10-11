@@ -1,6 +1,6 @@
 # Zalo Material Delivery Manager
 
-Read ARCHITECTURE.md and IMPLEMENTATION_PLAN.md first. M1 is a supervised, fail-closed PoC; live acceptance is pending. No bundle/accounting/AI/dashboard implementation yet.
+Read ARCHITECTURE.md and IMPLEMENTATION_PLAN.md first. M1 is a supervised, fail-closed read PoC accepted under the user-approved reduced scope in IMPLEMENTATION_PLAN.md. No bundle/accounting/AI/dashboard implementation yet.
 
 Windows Python 3.12+:
 
