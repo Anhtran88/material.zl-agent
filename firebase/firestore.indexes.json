@@ -68,6 +68,16 @@
       "collectionGroup": "bundleRevisions",
       "fieldPath": "proposalJson",
       "indexes": []
+    },
+    {
+      "collectionGroup": "jobs",
+      "fieldPath": "reportJson",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "evidenceArtifacts",
+      "fieldPath": "observedJson",
+      "indexes": []
     }
   ]
 }

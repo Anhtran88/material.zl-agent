@@ -17,7 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
 from .bundle_engine import build_bundles, review_bundles, BundleInputError
-from .firestore_capture import FirestoreCaptureStore, CloudStorageError
+from .firestore_capture import CloudStorageError
+from .recovery_store import RecoverableFirestoreStore
 from .local_browser import LocalBrowser
 from .login import profile_path
 from .models import StopAutomation
@@ -63,7 +64,7 @@ class Controller:
         self.enabled=False; self.until=0; self.lock=asyncio.Lock()
         self.session_id=str(uuid4())
         self.audit_events=deque(maxlen=200)
-        self.capture_store=capture_store or FirestoreCaptureStore()
+        self.capture_store=capture_store or RecoverableFirestoreStore()
         self.last_cloud_capture=None
         self.bundle_report=None
         self.bundle_capture_path=None
@@ -72,8 +73,8 @@ class Controller:
         if self.clock()>=self.until: self.enabled=False
         return {'connected':self.enabled,'session_id':self.session_id,
                 'scope':'one observed Zalo group; rendered text/image DOM only',
-                'milestone_1_accepted':True,'checkpoint_advanced':False,
-                'business_storage':'FIRESTORE_RAW_PROTOTYPE',
+                'milestone_1_accepted':True,'milestone_2_accepted_reduced_scope':True,'checkpoint_advanced':False,
+                'business_storage':'FIRESTORE_RECOVERABLE_CAPTURE',
                 'last_cloud_capture':self.last_cloud_capture,
                 'business_data_persisted':self.last_cloud_capture is not None,'local_business_persistence':False}
 
@@ -210,6 +211,23 @@ def create_app(token, controller=None, port=8765, clock=None):
 
     @app.post('/api/read-visible')
     async def read_visible(): return await controller.action('read_visible')
+
+    @app.post('/api/local/resume')
+    async def resume(request:Request):
+        local_only(request)
+        async with controller.lock:
+            try:
+                restored=await controller.capture_store.resume(session_id=controller.session_id)
+                if restored.get('restored'):
+                    report=restored['report'];receipt=restored['cloudStorage']
+                    controller.bundle_report=report
+                    controller.bundle_capture_path=receipt['documentPath']
+                    controller.last_cloud_capture=receipt
+                    return {**report,'cloudStorage':receipt,'resume':{'restored':True,'checkpoint':restored['checkpoint']}}
+                return {'resume':{'restored':False,'checkpoint':restored.get('checkpoint',{})}}
+            except CloudStorageError as exc:
+                controller.enabled=False
+                raise StopAutomation(str(exc)) from None
 
     @app.post('/api/local/bundles/review')
     async def bundles_review(request:Request, review:BundleReview):

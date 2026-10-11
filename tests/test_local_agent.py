@@ -22,6 +22,8 @@ class Browser:
                 'sourceTitle':SOURCE['title'],'candidateSourceId':SOURCE['dom_id']}
 
 class CaptureStore:
+    async def resume(self, **kwargs):
+        return {'restored':False,'checkpoint':{}}
     async def save(self, report, **kwargs):
         return {'saved':True,'projectId':'mock-project','documentPath':'tenants/default/captures/mock','commitTime':'mock-time'}
 
@@ -80,6 +82,40 @@ class LocalAgentTests(unittest.TestCase):
         self.assertEqual(response.json()['bundleEngine']['reviewVersion'],1)
         self.assertFalse(response.json()['bundleEngine']['bundles'][0]['accountingActive'])
         self.assertEqual(self.client.post('/api/local/bundles/review',headers=self.local,json=payload).status_code,409)
+    def test_cloud_resume_is_local_and_restores_review_without_reading_zalo(self):
+        from test_bundle_engine import report
+        from material_agent.bundle_engine import build_bundles
+        fixture=report([('text','Xi măng A'),('image','a')]);fixture['bundleEngine']=build_bundles(fixture)
+        class Restore(CaptureStore):
+            async def resume(self,**kwargs):
+                return {'restored':True,'report':fixture,'checkpoint':{'captureSequence':1,'finalizedCursor':None},
+                        'cloudStorage':{'saved':True,'documentPath':'tenants/default/captures/restored'}}
+        self.controller.capture_store=Restore()
+        self.assertEqual(self.client.post('/api/local/resume',headers=self.auth).status_code,403)
+        result=self.client.post('/api/local/resume',headers=self.local).json()
+        self.assertTrue(result['resume']['restored'])
+        self.assertEqual(self.controller.bundle_capture_path,'tenants/default/captures/restored')
+        self.assertFalse(self.browser.calls);self.assertFalse(self.controller.enabled)
+    def test_real_recovery_port_through_api_reuses_and_restores_cloud_capture(self):
+        from firestore_emulation import FirestoreModel
+        from material_agent.recovery_store import RecoverableFirestoreStore
+        from test_bundle_engine import report
+        fixture=report([('text','Xi măng A 2,5 tấn'),('image','a')])
+        async def execute(op):return fixture
+        self.browser.execute=execute
+        model=FirestoreModel();self.controller.capture_store=RecoverableFirestoreStore(model.transport())
+        self.connect()
+        first=self.client.post('/api/read-visible',headers=self.auth).json()
+        second=self.client.post('/api/read-visible',headers=self.auth).json()
+        self.assertTrue(second['cloudStorage']['duplicateSnapshot'])
+        self.assertEqual(first['cloudStorage']['documentPath'],second['cloudStorage']['documentPath'])
+        self.controller.enabled=False;self.controller.bundle_report=None;self.controller.bundle_capture_path=None
+        restored=self.client.post('/api/local/resume',headers=self.local).json()
+        self.assertTrue(restored['resume']['restored'])
+        self.assertEqual(restored['bundleEngine'],first['bundleEngine'])
+        self.assertEqual(restored['resume']['checkpoint']['captureSequence'],1)
+        self.assertFalse(self.controller.enabled)
+        self.assertFalse((Path(self.tmp.name)/'cache').exists())
     def test_mcp_config_is_local_and_contains_no_token(self):
         self.assertEqual(self.client.post('/api/local/mcp-config',headers=self.auth).status_code,403)
         response=self.client.post('/api/local/mcp-config',headers=self.local)
@@ -109,7 +145,7 @@ class LocalAgentTests(unittest.TestCase):
         self.assertFalse((Path(self.tmp.name)/'cache').exists())
         self.assertFalse((Path(self.tmp.name)/'logs').exists())
         state=self.controller.status()
-        self.assertEqual(state['business_storage'],'FIRESTORE_RAW_PROTOTYPE')
+        self.assertEqual(state['business_storage'],'FIRESTORE_RECOVERABLE_CAPTURE')
         self.assertTrue(state['business_data_persisted'])
         self.client.post('/api/disconnect',headers=self.auth)
         self.assertTrue(self.browser.closed)

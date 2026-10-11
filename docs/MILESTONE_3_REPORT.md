@@ -1,0 +1,44 @@
+# Milestone 3 — Cloud deduplication and checkpoint/resume
+
+Status: IMPLEMENTED FOR CURRENT OBSERVED DATA / 103 AUTOMATED TESTS PASSED / LIVE ACCEPTANCE PENDING, 2026-10-11 (Asia/Saigon). M4 is not started. The user accepted M2's proposal-generation scope and waived per-image manual review; that does not verify any proposed association or delivery.
+
+## Implemented cloud state
+
+RecoverableFirestoreStore is now the default Local Agent storage port for read_visible and bundle_review. Diagnostic structure captures keep the earlier M1 path and do not advance recovery checkpoints. Everything below is tenant-scoped under tenants/default; there is no local business database, cache/outbox or log persistence.
+
+- captures: canonical JSON capture IDs include operation and full payload SHA-256, excluding the transport session ID from read-snapshot identity (intentional review/audit metadata remains part of a reviewed snapshot). The same observed payload uses the same cloud record after restart/on another cooperative device. A receipt says duplicateSnapshot=true when that immutable capture already exists; no new bundle revisions or checkpoint increment are written. This checksum is a snapshot identity, not an original-image hash.
+- evidenceArtifacts: source-scoped observation/version signatures for messages and image metadata. Full DOM identity plus content/metadata is retained; two identical texts with different container IDs stay distinct. Edits, different loaded metadata and changed rendered context remain new observations, not silently discarded. IdentityProven=false records the lack of verified stable external IDs.
+- jobs: PREPARED full cloud payload, immutable target capture ID, source, nextArtifact chunk position, attempts, lastAttemptAt and leaseToken. At most 400 observed artifacts are staged in chunks of 100. Each chunk, progress and lease renewal use one CAS commit. Attempts are persisted and bounded at eight; exhaustion blocks the source pending deliberate investigation, not forced finalization. Recovery is user-triggered or occurs before saving another new source capture; no autonomous scheduler/backoff worker is claimed.
+- sourceLeases: one source lock, owner operation nonce, increasing fencing token, 120-second lease expiry and pendingJobPath. Time comes from Firestore batchGet readTime, not the Windows clock. updateTime preconditions stop competing/stale cooperative writers from committing. Timeouts are bounded and enough lease lifetime must remain before a commit. Pending payload references survive failure/crash/lease expiry; a subsequent owner resumes the job before processing another new capture.
+- checkpoints: lastDurableCapturePath, captureSequence, version and RENDERED_ONLY coverage. Atomic final commit creates the capture and bundle revisions, marks its job COMPLETED, records the durable pointer and releases the lease. No checkpoint is advanced for partially uploaded artifacts or unconfirmed writes. Existing scannedCursor/finalizedCursor values are preserved; this implementation does not invent/advance historical or business-final cursors.
+
+Lost acknowledgement is checked by reading durable cloud state. Identical snapshots are reused across process sessions; cloud updates to media metadata produce retained revisions. Source mismatch, stale ownership, corrupt pending identities/payloads, missing job/capture references and compare-and-swap failures stop rather than pretend success. A best-effort lease release retains the pending job; if the network is unavailable, other devices may have to wait for expiry.
+
+## Resume flow
+
+The paired local UI has “Khôi phục lần đọc từ Firestore”. Its local-only authenticated endpoint does not require reading Zalo. It claims the source, resumes a pending job when present, validates/loads the last completed capture from checkpoint and restores the Bundle UI/review version in RAM. Zalo remains disconnected until manually opened/verified; restoring cloud data does not restore a browser login or automate scrolling/backfill. Recovery reads/updates existing cloud state; it does not copy business data to disk.
+
+A fresh updated installation needs its first successful M3 read before the resume pointer exists. Old M1/M2 UUID captures are retained; no automatic scan/migration/delete of those legacy records is performed. Cross-session existing M3 exact snapshot identity is reused. Manual review still requires a paired local action and a current review version; it never activates accounting. M2 review is optional per the user's scope waiver.
+
+## Five-layer identity boundary
+
+Message/attachment observed signatures and immutable bundle revision signatures are available now. They are not claims of server ID stability or proven business-message uniqueness. Binary-file identity remains WAITING_FOR_VERIFIED_BYTES; business duplicate detection remains WAITING_FOR_EXTRACTED_FIELDS. No original bytes, extracted slip date/number/quantities or VERIFIED delivery exists yet, so those layers cannot truthfully decide duplicates. Identical text alone never permits deleting evidence. Completed captureSequence is not a delivered-material count. No active accounting revision is created, avoiding duplicate accounting by never asserting accounting completion in this stage.
+
+## Validation evidence
+
+103/103 automated tests passed including the existing Chromium, MCP and pinned real 9Router tests. Fourteen recovery tests exercise process-independent exact replay, lost claim/prepare/chunk/final ACK, failure before finalization, partial chunk recovery, expired-lease takeover, stale fencing, two interleaved cooperative Agents, recovery of an older pending capture before a new one, changed media metadata, identical text with distinct DOM identities, corrupt pending payload rejection, no false historical/final cursor advancement, empty resume, and bounded attempt exhaustion. Local API tests validate origin/auth restrictions and cloud-only restoration without Zalo reads, including the actual recovery storage port through read/replay/resume API operations using the REST fault model. Chromium UI tests include the resume action and existing bundle-review flow.
+
+The recovery tests use an in-memory Firestore REST/CAS fault model, explicitly not Google's Firebase Security Rules Emulator. They model updateTime preconditions and atomic commits; real Firestore recovery/lease races have not been observed in this session. Earlier user screenshots establish RAW cloud writes but not M3 acceptance. Existing dependency warnings did not fail checks. No private source contents were published and no repeated executor cloud probe was attempted.
+
+## Live acceptance on Windows
+
+1. Stop/update/restart Agent. Connect the allowed Zalo group and read a bounded window. Verify the receipt includes checkpointPath and new jobs/checkpoints/evidenceArtifacts records.
+2. Without changing the rendered data, read again. If payload is exactly unchanged, duplicateSnapshot=true and the capture path/captureSequence remain the same. Lazy-loading metadata changes legitimately create another version; do not count those as duplicate deliveries.
+3. Restart Agent, use “Khôi phục lần đọc từ Firestore” before opening Zalo. Verify restored=true, full original text/bundle proposal remains, and Zalo is still disconnected.
+4. In a controlled test, interrupt during cloud writes, restart/recover and check PREPARED becomes COMPLETED with one final capture and no cursor advancement over the partial job. Do not edit/delete job/lease/checkpoint records manually to make a test pass.
+5. If a second test device is available, verify source ownership/busy behavior and same-capture replay. Busy lease should be retried after release/expiry; public rules are not a lock enforcement security boundary.
+6. Record exact replay, restart and interrupted-job outcomes before accepting M3. M4 remains gated.
+
+## Limitations and operation
+
+Public rules still let unrelated clients edit data; the CAS/lease mechanism coordinates this application's cooperative Agents only. Production authorization, server-enforced tenancy and distributed review authorization remain cloud foundation work. Arbitrary external writes can invalidate any client convention. A rare long process pause can outlast a lease; checkpoints/final accounting are not trusted against hostile/public clients. The complete history cursor and binary/business duplicate layers remain unimplemented until actual source/document evidence is available. Offline unacknowledged RAM data is not durably queued; a cloud PREPARED job is recoverable, data never uploaded before network loss is not. Exact capture identity can legitimately change when rendered ordering/loaded metadata changes. No Storage upload, OCR, original-file validation, report PDF or delivery accounting is added.

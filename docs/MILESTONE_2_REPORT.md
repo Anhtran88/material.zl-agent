@@ -1,6 +1,6 @@
 # Milestone 2 — Delivery Bundle Engine
 
-Status: IMPLEMENTED / AUTOMATED CHECKS PASSED / LIVE ACCEPTANCE PENDING, 2026-10-11 (Asia/Saigon). M3 is not started. M1 was accepted under the user-approved reduced scope; user subsequently observed RAW captures in Firestore. Those observations do not independently validate the new M2 code.
+Status: ACCEPTED IN REDUCED PROPOSAL-GENERATION SCOPE, 2026-10-11 (Asia/Saigon). The user later waived per-image manual review and authorized M3. This does not verify any proposal or delivery. M1 was accepted under the user-approved reduced scope; user subsequently observed RAW captures in Firestore. Those observations do not independently validate the new M2 code.
 
 ## Implemented behavior
 
@@ -35,3 +35,6 @@ These tests use synthetic source labels/quantities and mocked Firestore REST. Th
 - Review session uses RAM and cloud snapshots. Reload/restart requires another read; reopening cloud review sessions, durable job leases and multi-device fencing are M3/cloud foundation work.
 - Firestore still uses the user's public rules; actor identifies a local paired session, not an authenticated Firebase user. Full tenant isolation and distributed review concurrency are not claimed. Capture/revision preconditions prevent stale review only within this Local Agent session.
 - Automatic multi-delivery field splitting inside one text, PDF generation, reports and accounting remain later milestones. Human association review does not make a document/date/quantity VERIFIED.
+
+## User scope waiver before M3
+User instructed to pass over manual selection/review. M2 is accepted for candidate generation and cloud persistence; unresolved associations remain unverified, no score automatically promotes them. User screenshot showed 15 proposals/35 image candidates at reviewVersion 0. This supersedes the earlier pending-manual-review gate; original procedure remains historical. M3 was explicitly authorized afterward.

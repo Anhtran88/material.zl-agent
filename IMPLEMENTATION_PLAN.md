@@ -6,7 +6,7 @@ Design documents were written before implementation. M1 read PoC is accepted und
 |---|---|---|
 | 1 Zalo PoC | Manual login, one exact allowed group, rendered message text/image metadata, local read-only controls | ACCEPTED — reduced scope per user instruction 2026-10-11; historical completeness, sender/message-time completeness and original download/hash waived as blockers; known limits retained |
 | 2 Bundle | Implemented capture-scoped bidirectional candidates, scored evidence, local review/merge/split, Firestore revisions | 87/87 tests pass; labeled Windows live comparison and reviewed revision persistence pending; no M3 yet |
-| 3 Cloud persistence/recovery | Firebase Auth + Firestore ingestion, Storage, cloud jobs, five identity layers, cursors | Emulator security tests and deployed ingestion/listeners; multi-device leases/fencing, replay/ACK loss/network loss; no local business persistence or duplicate accounting |
+| 3 Cloud deduplication/recovery | Implemented exact snapshot replay, observation versions, durable jobs, CAS leases, cloud checkpoint/resume | 103 tests pass; Windows M3 live acceptance pending. Binary/business identity and authenticated cloud foundation require later evidence/setup |
 | 4 Extraction | PDF/image/Word/Excel providers, evidence | Field-level accuracy fixture and missing/ambiguous values preserved |
 | 5 Validation | Date, role, quantity/unit and business duplicates | All conflict fixtures blocked and Decimal deltas correct |
 | 6 PDF | Context cover, attachments, names/archive | PDF readable, expected pages, original bytes retained, collision safe |
@@ -58,3 +58,6 @@ User Firebase Console screenshot shows three documents in captures and user conf
 
 ## M2 implementation — 2026-10-11
 Implemented conservative DOM-order candidates in both directions, per-image review, follow-up message merge/split, version/reason audit and atomic capture/bundleRevisions Firestore writes. Full source text remains intact, dates/quantities are not promoted to verified fields. 87/87 automated tests passed. See docs/MILESTONE_2_REPORT.md for evidence, limitations and live acceptance procedure. M2 live acceptance is pending; M3 must not start yet.
+
+## M2 waiver and M3 implementation — 2026-10-11
+User waived manual per-image review and accepted M2's proposal-generation scope, then authorized M3. Implemented RecoverableFirestoreStore, canonical snapshot reuse across sessions, versioned observation artifacts, bounded cloud PREPARED jobs/chunks/attempts, server-read-time CAS leases/fencing and atomic final capture/checkpoint commit. Added cloud-only UI resume without opening Zalo. 103/103 tests passed. Binary/business identities remain explicitly waiting for verified bytes/extracted fields; no historical/final checkpoint is invented or accounting activated. Older UUID captures are retained without migration. See docs/MILESTONE_3_REPORT.md. M3 live acceptance remains pending; M4 is not started.

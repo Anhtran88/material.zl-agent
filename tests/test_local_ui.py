@@ -47,6 +47,8 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
                         await page.locator('#inspect').click()
                         await expect(page.locator('#result')).to_contain_text('structure')
                         await expect(page.locator('#cloudState')).to_contain_text('đã lưu báo cáo')
+                        await page.locator('#resume').click()
+                        await expect(page.locator('#cloudState')).to_contain_text('chưa có bản đọc')
                         await page.locator('#cloudTest').click()
                         await expect(page.locator('#cloudState')).to_contain_text('kiểm tra ghi thành công')
                         await expect(page.locator('#result')).to_contain_text('CONNECTIVITY_TEST')
