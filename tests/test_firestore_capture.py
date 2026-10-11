@@ -37,3 +37,21 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError,'API_KEY_SERVICE_BLOCKED') as caught:
             await FirestoreCaptureStore(httpx.MockTransport(handler)).save({},operation='structure',session_id='test')
         self.assertNotIn('secret_remote_key',str(caught.exception))
+    async def test_bundle_and_capture_writes_are_one_atomic_create_only_commit(self):
+        from test_bundle_engine import report
+        from material_agent.bundle_engine import build_bundles
+        r=report([('text','Xi măng A 2,5 tấn'),('image','a'),('text','Đá B 5m3')])
+        r['bundleEngine']=build_bundles(r)
+        def handler(request):
+            self.assertEqual(request.method,'POST')
+            writes=json.loads(request.content)['writes']
+            self.assertEqual(len(writes),3)
+            self.assertTrue(all(w['currentDocument']=={'exists':False} for w in writes))
+            self.assertTrue(all('/bundleRevisions/' in w['update']['name'] for w in writes[1:]))
+            for w in writes[1:]:
+                fields=w['update']['fields']
+                self.assertFalse(fields['accountingActive']['booleanValue'])
+                self.assertEqual(fields['state']['stringValue'],'NEEDS_REVIEW')
+            return httpx.Response(200,json={'writeResults':[{} for w in writes],'commitTime':'time'})
+        receipt=await FirestoreCaptureStore(httpx.MockTransport(handler)).save(r,operation='read_visible',session_id='test')
+        self.assertEqual(len(receipt['bundleRevisionPaths']),2)

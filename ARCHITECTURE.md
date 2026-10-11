@@ -1,6 +1,6 @@
 # Zalo Material Delivery Manager — Architecture
 
-Status: design baseline; Milestone 1 read PoC accepted in a user-approved reduced scope on 2026-10-11 (see IMPLEMENTATION_PLAN.md). Full extraction and accounting remain unimplemented. Accuracy > traceability > integrity > automation > speed.
+Status: design baseline; Milestone 1 read PoC accepted in a user-approved reduced scope on 2026-10-11 (see IMPLEMENTATION_PLAN.md). M2 capture-scoped candidates/review are implemented pending live acceptance. Full extraction and accounting remain unimplemented. Accuracy > traceability > integrity > automation > speed.
 
 ## Requirements and risks
 Zalo is a read-only source restricted to a user-maintained Allow List. Timeline is primary; media library is recovery only. No send, reply, react, forward, edit, delete, recall or upload capability is exposed. Manual login is required; QR, CAPTCHA, logout, verification and ambiguous UI stop automation. Opening a conversation may mark messages read in Zalo; this is a platform side effect that must be disclosed during live acceptance. We cannot claim zero server writes merely from a read-only application API.
@@ -62,3 +62,6 @@ Retain the original full message body alongside structured fields: stated dates,
 
 ## Cloud persistence revision — 2026-10-11
 User requested cloud-only business persistence and future realtime multi-device clients. Cloud Firestore is chosen over Realtime Database for structured evidence, queries and transactional business state; Firebase Storage holds binary artifacts. No Firebase project exists yet. Deployment and actual authenticated ingestion/listeners remain pending project creation and access. Bootstrap rules deny all client access until tested tenant membership rules/backend exist. Legacy PoC/standalone inspector file-export entrypoints are disabled under this policy; historical implementation tests do not establish cloud persistence. Previous local cache files are not deleted automatically.
+
+## M2 implementation mapping
+Current Engine is a conservative DOM-order candidate/review implementation (bundle_engine.py), not OCR-based automatic grouping. It preserves full message text, optional display metadata and provisional source/evidence IDs. Local operator per-image assignment and direct message merge/split create immutable capture-scoped reviewed snapshots, with no business completion. RAW capture and bundle draft revisions are atomically created in Firestore; queryable revision metadata accompanies proposalJson. Current scoring stays below automatic thresholds because actual document content is unavailable. Cross-capture uniqueness, durable jobs/leases, reopening cloud review and multi-device transactions remain M3/cloud foundation. See docs/MILESTONE_2_REPORT.md; M2 live acceptance is pending.

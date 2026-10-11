@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
 from .bridge_credentials import write_connection
+from .bundle_engine import build_bundles, review_bundles, BundleInputError
 from .firestore_capture import FirestoreCaptureStore, CloudStorageError
 from .local_browser import LocalBrowser
 from .login import profile_path
@@ -34,6 +35,24 @@ class GatewaySettings(BaseModel):
     minimum_interval: float=Field(default=1,ge=0.5,le=60)
 
 
+class BundleAssignment(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    attachmentId:str=Field(min_length=1,max_length=100)
+    messageId:str | None=Field(default=None,max_length=100)
+
+class MessageMerge(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    messageId:str=Field(min_length=1,max_length=100)
+    targetMessageId:str=Field(min_length=1,max_length=100)
+
+class BundleReview(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    capturePath:str=Field(min_length=1,max_length=200)
+    expectedReviewVersion:int=Field(ge=0)
+    assignments:list[BundleAssignment]=Field(max_length=200)
+    reason:str=Field(min_length=1,max_length=1000)
+    messageMerges:list[MessageMerge]=Field(default_factory=list,max_length=200)
+
 class Controller:
     def __init__(self, browser=None, root=None, gateway=None, clock=None, router=None, capture_store=None):
         self.browser=browser or LocalBrowser()
@@ -46,6 +65,8 @@ class Controller:
         self.audit_events=deque(maxlen=200)
         self.capture_store=capture_store or FirestoreCaptureStore()
         self.last_cloud_capture=None
+        self.bundle_report=None
+        self.bundle_capture_path=None
 
     def status(self):
         if self.clock()>=self.until: self.enabled=False
@@ -66,13 +87,23 @@ class Controller:
             if not self.status()['connected']:
                 raise StopAutomation('Connect locally before browser reads')
             self.last_cloud_capture=None
+            self.bundle_report=None
+            self.bundle_capture_path=None
             try:
                 result=await self.browser.execute(operation)
+                if operation=='read_visible':
+                    result={**result,'bundleEngine':build_bundles(result)}
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
                 self.last_cloud_capture=receipt
+                if operation=='read_visible':
+                    self.bundle_report=result
+                    self.bundle_capture_path=receipt['documentPath']
                 result={**result,'cloudStorage':receipt}
                 self.audit(operation,'OK')
                 return result
+            except BundleInputError as exc:
+                self.enabled=False
+                raise StopAutomation('Bundle: '+str(exc)) from None
             except CloudStorageError as exc:
                 self.enabled=False
                 self.audit(operation,exc.code)
@@ -179,6 +210,31 @@ def create_app(token, controller=None, port=8765, clock=None):
 
     @app.post('/api/read-visible')
     async def read_visible(): return await controller.action('read_visible')
+
+    @app.post('/api/local/bundles/review')
+    async def bundles_review(request:Request, review:BundleReview):
+        local_only(request)
+        async with controller.lock:
+            if (not controller.bundle_report or review.capturePath!=controller.bundle_capture_path or
+                    review.expectedReviewVersion!=controller.bundle_report['bundleEngine']['reviewVersion']):
+                raise HTTPException(409,'Review is stale; read or review the latest capture first')
+            try:
+                engine=review_bundles(controller.bundle_report['bundleEngine'],
+                    [a.model_dump() for a in review.assignments],review.reason,
+                    actor='local_operator:'+controller.session_id,
+                    message_merges=[m.model_dump() for m in review.messageMerges])
+                report={**controller.bundle_report,'bundleEngine':engine,
+                        'parentCapturePath':controller.bundle_capture_path}
+                receipt=await controller.capture_store.save(report,operation='bundle_review',session_id=controller.session_id)
+                controller.bundle_report=report
+                controller.bundle_capture_path=receipt['documentPath']
+                controller.last_cloud_capture=receipt
+                return {**report,'cloudStorage':receipt}
+            except BundleInputError as exc:
+                raise HTTPException(422,str(exc)) from None
+            except CloudStorageError as exc:
+                controller.enabled=False
+                raise StopAutomation(str(exc)) from None
 
     @app.post('/api/local/cloud-test')
     async def cloud_test(request:Request):

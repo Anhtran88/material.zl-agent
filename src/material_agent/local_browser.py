@@ -43,6 +43,9 @@ DOM_PROBE = r'''({source, operation}) => {
   if (operation === 'structure') return {...base,
     textStructures:texts.slice(0,5).map(ancestors),imageStructures:images.slice(0,5).map(ancestors)};
   if (operation !== 'read_visible') throw new Error('Unsupported operation');
+  const ordered = [...texts, ...images].sort((a,b) =>
+    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+  const positions = new Map(ordered.map((n,i)=>[n,i]));
   // These are current DOM labels and opaque identities, not stable server IDs.
   const context = n => {
     const bubble = n.closest('[data-component="bubble-message"]');
@@ -56,7 +59,7 @@ DOM_PROBE = r'''({source, operation}) => {
       const value = normalize(nodes[0].textContent || '');
       return value && value.length <= 500 ? value : null;
     };
-    return {candidateBubbleId:bubble?.id || null,candidateFrameId:frame?.id || null,
+    return {renderedOrder:positions.get(n),candidateBubbleId:bubble?.id || null,candidateFrameId:frame?.id || null,
       senderDisplayLabel:label('.message-sender-name-wrapper'),
       messageTimeDisplayLabel:label('.card-send-time')};
   };

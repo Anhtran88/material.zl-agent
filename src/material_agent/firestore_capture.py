@@ -24,7 +24,7 @@ class FirestoreCaptureStore:
         self.transport = transport
 
     async def save(self, report, *, operation, session_id):
-        if operation not in {'structure', 'read_visible'}:
+        if operation not in {'structure', 'read_visible', 'bundle_review'}:
             raise ValueError('Capture operation not permitted')
         raw = json.dumps(report, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
         if len(raw.encode('utf-8')) > 700_000:
@@ -43,6 +43,30 @@ class FirestoreCaptureStore:
         body = {'writes': [{'update': {'name': name, 'fields': fields},
                             'currentDocument': {'exists': False},
                             'updateTransforms': [{'fieldPath': 'receivedAt', 'setToServerValue': 'REQUEST_TIME'}]}]}
+        bundle_paths=[]
+        engine=report.get('bundleEngine')
+        if engine is not None:
+            if len(engine.get('bundles', [])) > 200:
+                raise CloudStorageError('BUNDLE_LIMIT_EXCEEDED')
+            for bundle in engine['bundles']:
+                path=f"tenants/default/bundleRevisions/{capture_id}_{bundle['bundleId']}"
+                bundle_paths.append(path)
+                proposal=json.dumps(bundle,ensure_ascii=False,separators=(',', ':'),allow_nan=False)
+                body['writes'].append({
+                    'update':{'name':f'projects/{PROJECT_ID}/databases/(default)/documents/{path}',
+                              'fields':{'captureId':{'stringValue':capture_id},
+                                        'bundleId':{'stringValue':bundle['bundleId']},
+                                        'sourceId':{'stringValue':engine['sourceId']},
+                                        'rulesetVersion':{'stringValue':engine['rulesetVersion']},
+                                        'state':{'stringValue':bundle['state']},
+                                        'reviewVersion':{'integerValue':str(engine['reviewVersion'])},
+                                        'accountingActive':{'booleanValue':False},
+                                        'proposalJson':{'stringValue':proposal}}},
+                    'currentDocument':{'exists':False}})
+        def receipt(commit_time):
+            return {'saved':True,'projectId':PROJECT_ID,
+                    'documentPath':f'tenants/default/captures/{capture_id}',
+                    'commitTime':commit_time,'bundleRevisionPaths':bundle_paths}
         async with httpx.AsyncClient(transport=self.transport, timeout=20,
                                     follow_redirects=False, trust_env=True) as client:
             for attempt in range(2):
@@ -50,10 +74,8 @@ class FirestoreCaptureStore:
                     response = await client.post(DOCUMENTS + ':commit', params={'key': API_KEY}, json=body)
                     if response.status_code == 200:
                         ack = response.json()
-                        if len(ack.get('writeResults', [])) == 1 and ack.get('commitTime'):
-                            return {'saved': True, 'projectId': PROJECT_ID,
-                                    'documentPath': f'tenants/default/captures/{capture_id}',
-                                    'commitTime': ack['commitTime']}
+                        if len(ack.get('writeResults', [])) == len(body['writes']) and ack.get('commitTime'):
+                            return receipt(ack['commitTime'])
                         raise CloudStorageError('INVALID_ACK')
                     if response.status_code not in {409, 429, 500, 502, 503, 504}:
                         code='HTTP_' + str(response.status_code)
@@ -80,9 +102,7 @@ class FirestoreCaptureStore:
                         if (values.get('payloadSha256', {}).get('stringValue') == digest
                                 and values.get('reportJson', {}).get('stringValue') == raw
                                 and doc.get('updateTime')):
-                            return {'saved': True, 'projectId': PROJECT_ID,
-                                    'documentPath': f'tenants/default/captures/{capture_id}',
-                                    'commitTime': doc['updateTime']}
+                            return receipt(doc['updateTime'])
                         raise CloudStorageError('CAPTURE_IDENTITY_CONFLICT')
                 except httpx.TransportError:
                     pass

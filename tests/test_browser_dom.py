@@ -64,6 +64,16 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(record['senderDisplayLabel'])
             self.assertIsNone(record['messageTimeDisplayLabel'])
             self.assertIsNone(record['candidateBubbleId'])
+    async def test_rendered_order_interleaves_images_and_text(self):
+        await self.page.evaluate("""() => {
+          const n=document.querySelector('[id^="image-mCntr_"]');
+          const t=document.querySelector('[id^="text-mCntr_"]');
+          t.before(n);
+          const after=n.cloneNode(true);after.id='image-mCntr_after-g3144426084883145716';t.after(after);
+        }""")
+        result=await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'read_visible'})
+        self.assertEqual(result['messages'][0]['renderedOrder'],1)
+        self.assertEqual([a['renderedOrder'] for a in result['attachments']],[0,2])
     async def test_duplicate_title_blocks(self):
         await self.page.evaluate("document.querySelector('#conversationList').appendChild(document.querySelector('[anim-data-id]').cloneNode(true))")
         with self.assertRaises(Exception): await self.page.evaluate(DOM_PROBE,{'source':SOURCE,'operation':'verify'})

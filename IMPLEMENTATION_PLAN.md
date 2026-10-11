@@ -5,7 +5,7 @@ Design documents were written before implementation. M1 read PoC is accepted und
 | Milestone | Deliverable | Acceptance gate |
 |---|---|---|
 | 1 Zalo PoC | Manual login, one exact allowed group, rendered message text/image metadata, local read-only controls | ACCEPTED — reduced scope per user instruction 2026-10-11; historical completeness, sender/message-time completeness and original download/hash waived as blockers; known limits retained |
-| 2 Bundle | Bidirectional candidates, scored evidence, review | Labeled sequences and competing deliveries match; uncertain cases never auto-merge |
+| 2 Bundle | Implemented capture-scoped bidirectional candidates, scored evidence, local review/merge/split, Firestore revisions | 87/87 tests pass; labeled Windows live comparison and reviewed revision persistence pending; no M3 yet |
 | 3 Cloud persistence/recovery | Firebase Auth + Firestore ingestion, Storage, cloud jobs, five identity layers, cursors | Emulator security tests and deployed ingestion/listeners; multi-device leases/fencing, replay/ACK loss/network loss; no local business persistence or duplicate accounting |
 | 4 Extraction | PDF/image/Word/Excel providers, evidence | Field-level accuracy fixture and missing/ambiguous values preserved |
 | 5 Validation | Date, role, quantity/unit and business duplicates | All conflict fixtures blocked and Decimal deltas correct |
@@ -55,3 +55,6 @@ Added fixed-project REST RAW capture commits for materialzlagent using the user'
 
 ## Cloud write observation — 2026-10-11
 User Firebase Console screenshot shows three documents in captures and user confirms save works. RAW cloud writes have user-observed live evidence; content/receipt matching remains uninspected. Visible cloud status and local-only no-Zalo connectivity-test write added, with safe error diagnostics; 70/70 automated tests pass. Full authenticated cloud foundation and M2 business processing remain unimplemented.
+
+## M2 implementation — 2026-10-11
+Implemented conservative DOM-order candidates in both directions, per-image review, follow-up message merge/split, version/reason audit and atomic capture/bundleRevisions Firestore writes. Full source text remains intact, dates/quantities are not promoted to verified fields. 87/87 automated tests passed. See docs/MILESTONE_2_REPORT.md for evidence, limitations and live acceptance procedure. M2 live acceptance is pending; M3 must not start yet.

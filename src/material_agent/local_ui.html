@@ -7,6 +7,12 @@
 <hr><button id="inspect">Kiểm tra DOM</button><button id="read">Đọc tin nhắn đang hiển thị</button><button id="cloudTest">Kiểm tra kết nối Firestore</button>
 <p id="cloudState" role="status">Firestore: chưa kiểm tra trong phiên này.</p>
 <p><small>Báo cáo được lưu trực tiếp lên Firestore materialzlagent. Kiểm tra cloudStorage.saved trong kết quả; lỗi lưu sẽ dừng đọc. Không tự lưu báo cáo trên máy. Dữ liệu RAW chưa xác minh; chưa đầy đủ người gửi/thời gian, file và lịch sử. Chưa tải ảnh gốc, chưa xử lý giao nhận hay cập nhật checkpoint.</small></p></section>
+<section><h2>Delivery Bundle — Milestone 2</h2>
+<p>Đề xuất ghép tin và ảnh trong lần đọc hiện tại. Điểm là mức hỗ trợ của quy tắc, không phải xác suất đúng. Không tự xác nhận giao nhận hoặc tính khối lượng.</p>
+<p id="bundleSummary">Đọc tin nhắn để tạo đề xuất.</p><div id="bundleMessages"></div><div id="bundleLinks"></div>
+<label>Lý do duyệt<input id="reviewReason" maxlength="1000" placeholder="Vì sao các ảnh đã chọn thuộc tin nhắn này?"></label>
+<button id="reviewBundles" disabled>Lưu liên kết đã duyệt lên Firestore</button>
+<p><small>Có thể gộp tin bổ sung vào một tin chính, hoặc tách lại ở lần duyệt tiếp. Ảnh chưa chọn giữ trạng thái cần duyệt. Có thể chọn từng ảnh của album cho các tin khác nhau. Ngày xác nhận trên phiếu chưa được trích xuất; không dùng giờ tin nhắn thay thế.</small></p></section>
 <section><h2>9Router</h2><p>Cấu hình cục bộ. Kiểm tra <code>/models</code> không gửi dữ liệu Zalo sang AI.</p>
 <label>API Base URL<input id="base" placeholder="http://127.0.0.1:20128/v1" autocomplete="off"></label>
 <label>Model<input id="model" placeholder="Chọn model sau khi kết nối provider" autocomplete="off"></label>
@@ -19,22 +25,63 @@
 <script>
 let token=location.hash.slice(1);history.replaceState(null,'',location.pathname);
 const result=document.getElementById('result');
+let bundleCapture=null;
+function renderBundles(data){
+ if(!data.bundleEngine)return;
+ bundleCapture=data;
+ const e=data.bundleEngine;
+ document.getElementById('bundleSummary').textContent=e.bundles.length+' đề xuất; '+e.links.length+' ảnh cần đối chiếu. Phiên duyệt '+e.reviewVersion+'.';
+ const messages=document.getElementById('bundleMessages');messages.replaceChildren();
+ for(const [i,m] of e.messages.entries()){
+  const d=document.createElement('details'),title=document.createElement('summary'),body=document.createElement('pre');
+  title.textContent='Tin '+(i+1)+' — '+m.text.slice(0,100);body.textContent=m.text;
+  const grouping=document.createElement('select');grouping.dataset.messageId=m.evidenceId;
+  const own=document.createElement('option');own.value=m.evidenceId;own.textContent='Giữ tin này thành đề xuất riêng';grouping.append(own);
+  for(const [j,other] of e.messages.entries())if(other.evidenceId!==m.evidenceId){const option=document.createElement('option');option.value=other.evidenceId;option.textContent='Gộp vào tin '+(j+1)+' — '+other.text.slice(0,70);grouping.append(option);}
+  grouping.value=e.messageGroups?.[m.evidenceId]||m.evidenceId;
+  d.append(title,body,grouping);messages.append(d);
+ }
+ const links=document.getElementById('bundleLinks');links.replaceChildren();
+ for(const [i,link] of e.links.entries()){
+  const line=document.createElement('div'),label=document.createElement('p'),select=document.createElement('select');
+  const att=e.attachments.find(a=>a.evidenceId===link.attachmentId);
+  label.textContent='Ảnh '+(i+1)+' — '+att.domContainerId+' — '+(link.competing?'nhiều tin cạnh tranh':link.state);
+  select.dataset.attachmentId=link.attachmentId;
+  const none=document.createElement('option');none.value='';none.textContent='Chưa ghép / giữ cần duyệt';select.append(none);
+  for(const c of link.candidates){
+   const m=e.messages.find(m=>m.evidenceId===c.messageId),option=document.createElement('option');
+   option.value=c.messageId;option.textContent='Tin '+(e.messages.indexOf(m)+1)+' | điểm '+c.score+' | '+c.direction+' | '+m.text.slice(0,90);select.append(option);
+  }
+  select.value=link.selectedMessageId||'';line.append(label,select);links.append(line);
+ }
+ document.getElementById('reviewBundles').disabled=false;
+}
 async function api(path,method='GET',body){
  if(!token)throw new Error('Trang chưa được ghép nối. Khởi động lại Local Agent để mở trang có mã kết nối.');
  const r=await fetch(path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
  const data=await r.json();if(!r.ok)throw new Error(data.detail || 'Thao tác dừng');return data;
 }
 async function show(path,method='GET',body,save=false){
- const cloudAction=path==='/api/read-visible'||path==='/api/structure'||path==='/api/local/cloud-test';
+ const cloudAction=path==='/api/read-visible'||path==='/api/structure'||path==='/api/local/cloud-test'||path==='/api/local/bundles/review';
  const cloud=document.getElementById('cloudState');
  if(cloudAction)cloud.textContent='Firestore: đang kiểm tra/lưu…';
- try{const data=await api(path,method,body);result.textContent=JSON.stringify(data,null,2);
+ if(path==='/api/read-visible'||path==='/api/structure'){bundleCapture=null;document.getElementById('reviewBundles').disabled=true;document.getElementById('bundleSummary').textContent='Đang đọc dữ liệu mới…';document.getElementById('bundleMessages').replaceChildren();document.getElementById('bundleLinks').replaceChildren();}
+ try{const data=await api(path,method,body);result.textContent=JSON.stringify(data,null,2);renderBundles(data);
  if(data.cloudStorage?.saved===true)cloud.textContent=(data.kind==='CONNECTIVITY_TEST'?'Firestore: kiểm tra ghi thành công — ':'Firestore: đã lưu báo cáo — ')+data.cloudStorage.documentPath;
  const s=await api('/api/status');document.getElementById('state').textContent=s.connected?'Đã kết nối đọc nhóm':'Đã ngắt / chờ kiểm tra thủ công';
- if(cloudAction)result.scrollIntoView({block:'nearest'});
+ if(data.bundleEngine)document.getElementById('bundleSummary').scrollIntoView({block:'nearest'});else if(cloudAction)result.scrollIntoView({block:'nearest'});
  }catch(e){result.textContent=e.message;if(cloudAction)cloud.textContent='Firestore: chưa xác nhận lưu — '+e.message;document.getElementById('state').textContent='Dừng / kiểm tra thủ công';result.scrollIntoView({block:'nearest'});}
 }
 for(const [id,path] of [['open','/api/local/browser'],['connect','/api/local/connect'],['stop','/api/disconnect'],['inspect','/api/structure'],['read','/api/read-visible'],['probeAI','/api/ai/probe']])document.getElementById(id).onclick=()=>show(path,'POST',undefined,id==='inspect'||id==='read');
+document.getElementById('reviewBundles').onclick=async()=>{
+ if(!bundleCapture)return;
+ const button=document.getElementById('reviewBundles');button.disabled=true;
+ const reason=document.getElementById('reviewReason').value;
+ const messageMerges=[...document.querySelectorAll('#bundleMessages select')].filter(s=>s.value!==s.dataset.messageId).map(s=>({messageId:s.dataset.messageId,targetMessageId:s.value}));
+ const assignments=[...document.querySelectorAll('#bundleLinks select')].map(s=>({attachmentId:s.dataset.attachmentId,messageId:s.value||null}));
+ await show('/api/local/bundles/review','POST',{capturePath:bundleCapture.cloudStorage.documentPath,expectedReviewVersion:bundleCapture.bundleEngine.reviewVersion,assignments,reason,messageMerges});
+ button.disabled=false;
+};
 document.getElementById('cloudTest').onclick=()=>show('/api/local/cloud-test','POST');
 document.getElementById('status').onclick=()=>show('/api/status');
 document.getElementById('saveAI').onclick=async()=>{const settings={base_url:document.getElementById('base').value,model:document.getElementById('model').value,fallback_models:document.getElementById('fallback').value.split(',').map(x=>x.trim()).filter(Boolean),api_key:document.getElementById('key').value};document.getElementById('key').value='';await show('/api/local/ai/settings','POST',settings);};

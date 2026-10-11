@@ -15,7 +15,13 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sock=socket.socket();sock.bind(('127.0.0.1',0));sock.listen(128)
             port=sock.getsockname()[1];origin=f'http://127.0.0.1:{port}'
-            control=Controller(browser=Browser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router(),capture_store=CaptureStore())
+            class BundleBrowser(Browser):
+                async def execute(self,op):
+                    if op=='read_visible':
+                        from test_bundle_engine import report
+                        return report([('image','img-before'),('text','Xi măng ngày 11/10/2026 công trình A 2,5 tấn <script>unsafe()</script>'),('image','img-after')])
+                    return await super().execute(op)
+            control=Controller(browser=BundleBrowser(),root=Path(tmp),gateway=GatewayService(Path(tmp)/'ai.json'),router=Router(),capture_store=CaptureStore())
             app=create_app('ui-test-key',control,port=port)
             server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
             task=asyncio.create_task(server.serve(sockets=[sock]))
@@ -44,6 +50,19 @@ class LocalUITests(unittest.IsolatedAsyncioTestCase):
                         await page.locator('#cloudTest').click()
                         await expect(page.locator('#cloudState')).to_contain_text('kiểm tra ghi thành công')
                         await expect(page.locator('#result')).to_contain_text('CONNECTIVITY_TEST')
+                        await page.locator('#read').click()
+                        await expect(page.locator('#bundleSummary')).to_contain_text('1 đề xuất; 2 ảnh')
+                        await expect(page.locator('#bundleMessages pre')).to_contain_text('<script>unsafe()</script>')
+                        self.assertEqual(await page.locator('#bundleMessages script').count(),0)
+                        selects=page.locator('#bundleLinks select')
+                        self.assertEqual(await selects.count(),2)
+                        for i in range(2):await selects.nth(i).select_option(index=1)
+                        await page.locator('#reviewReason').fill('Đối chiếu hai ảnh với nội dung giao xi măng')
+                        await page.locator('#reviewBundles').click()
+                        await expect(page.locator('#bundleSummary')).to_contain_text('Phiên duyệt 1')
+                        await expect(page.locator('#result')).to_contain_text('ASSOCIATION_REVIEWED')
+                        self.assertEqual(control.bundle_report['bundleEngine']['bundles'][0]['selectedAttachmentIds'],
+                                         [a['evidenceId'] for a in control.bundle_report['bundleEngine']['attachments']])
                         await page.locator('#base').fill('http://127.0.0.1:20128/v1')
                         await page.locator('#key').fill('private-ui-key')
                         await page.locator('#saveAI').click()

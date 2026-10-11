@@ -17,7 +17,9 @@ class Browser:
     async def execute(self, op):
         self.calls.append(op)
         if self.fail: raise StopAutomation('secret_should_not_leak')
-        return {'operation':op,'layer':'RAW_UNVERIFIED','messages':[]}
+        from material_agent.local_browser import SOURCE
+        return {'operation':op,'layer':'RAW_UNVERIFIED','messages':[],'attachments':[],
+                'sourceTitle':SOURCE['title'],'candidateSourceId':SOURCE['dom_id']}
 
 class CaptureStore:
     async def save(self, report, **kwargs):
@@ -59,6 +61,25 @@ class LocalAgentTests(unittest.TestCase):
         self.assertFalse(self.controller.enabled)
         self.assertFalse(self.controller.status()['business_data_persisted'])
         self.assertFalse((Path(self.tmp.name)/'cache').exists())
+    def test_bundle_review_is_local_and_stale_or_invalid_inputs_never_commit(self):
+        from test_bundle_engine import report
+        fixture=report([('text','Xi măng A 2,5 tấn'),('image','a')])
+        async def execute(op):return fixture
+        self.browser.execute=execute;self.connect()
+        read=self.client.post('/api/read-visible',headers=self.auth).json()
+        self.assertTrue(read['cloudStorage']['saved'])
+        e=read['bundleEngine']
+        payload={'capturePath':read['cloudStorage']['documentPath'],'expectedReviewVersion':0,
+                 'assignments':[{'attachmentId':e['attachments'][0]['evidenceId'],'messageId':e['messages'][0]['evidenceId']}],
+                 'reason':'Đối chiếu thủ công'}
+        self.assertEqual(self.client.post('/api/local/bundles/review',headers=self.auth,json=payload).status_code,403)
+        bad={**payload,'assignments':[{'attachmentId':'unknown','messageId':'other'}]}
+        self.assertEqual(self.client.post('/api/local/bundles/review',headers=self.local,json=bad).status_code,422)
+        response=self.client.post('/api/local/bundles/review',headers=self.local,json=payload)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['bundleEngine']['reviewVersion'],1)
+        self.assertFalse(response.json()['bundleEngine']['bundles'][0]['accountingActive'])
+        self.assertEqual(self.client.post('/api/local/bundles/review',headers=self.local,json=payload).status_code,409)
     def test_mcp_config_is_local_and_contains_no_token(self):
         self.assertEqual(self.client.post('/api/local/mcp-config',headers=self.auth).status_code,403)
         response=self.client.post('/api/local/mcp-config',headers=self.local)

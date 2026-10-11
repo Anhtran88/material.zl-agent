@@ -63,6 +63,11 @@
       "collectionGroup": "captures",
       "fieldPath": "reportJson",
       "indexes": []
+    },
+    {
+      "collectionGroup": "bundleRevisions",
+      "fieldPath": "proposalJson",
+      "indexes": []
     }
   ]
 }
