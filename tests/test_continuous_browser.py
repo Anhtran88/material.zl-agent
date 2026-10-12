@@ -20,6 +20,7 @@ class ContinuousBrowserFlow(unittest.IsolatedAsyncioTestCase):
           const sidebar=document.getElementById('conversationList'),first=sidebar.firstElementChild;
           const second=first.cloneNode(true);second.setAttribute('anim-data-id','g999999');
           second.querySelector('.truncate').textContent='TDC-ĐỐI CHIẾU KL BÊ TÔN';sidebar.append(second);
+          second.querySelector('.truncate').style.display='none';second.querySelector('.conv-item').style.cssText='width:340px;height:80px';
           for(const row of [first,second])row.querySelector('.conv-item').onclick=()=>setTimeout(()=>{
             for(const r of [first,second])r.querySelector('.conv-item').classList.remove('selected');
             row.querySelector('.conv-item').classList.add('selected');

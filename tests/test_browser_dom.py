@@ -180,6 +180,7 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         class TransientTarget:
             def __init__(self,target):self.target=target
             async def count(self):return await self.target.count()
+            async def is_visible(self):return await self.target.is_visible()
             async def scroll_into_view_if_needed(self,**kwargs):return await self.target.scroll_into_view_if_needed(**kwargs)
             async def click(self,**kwargs):
                 attempts.append(1)
@@ -189,3 +190,39 @@ class BrowserDOMTests(unittest.IsolatedAsyncioTestCase):
         port=LocalBrowser();port.page=self.page
         await port._click_group(SOURCE)
         self.assertEqual(len(attempts),2)
+
+    async def test_hidden_title_uses_verified_row_click(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        await self.page.evaluate("""() => {
+          const item=document.querySelector('.conv-item');item.classList.remove('selected');
+          item.style.cssText='width:340px;height:80px;background:#eee';
+          item.querySelector('.truncate').style.display='none';
+          item.onclick=()=>item.classList.add('selected');
+          document.getElementById('timeline').style.cssText='height:300px;overflow-y:auto';
+        }""")
+        port=LocalBrowser();port.page=self.page
+        self.assertEqual(await port.select_group({'title':SOURCE['title'],'dom_id':SOURCE['dom_id']}),SOURCE)
+
+    async def test_title_overlay_uses_uncovered_same_row(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML))
+        await self.page.goto('https://chat.zalo.me/')
+        await self.page.evaluate("""() => {
+          const item=document.querySelector('.conv-item');item.classList.remove('selected');
+          item.style.cssText='position:relative;width:340px;height:90px;background:#eee';
+          const title=item.querySelector('.truncate');title.style.cssText='width:260px;height:25px';
+          const overlay=document.createElement('div');overlay.style.cssText='position:absolute;left:0;top:0;width:300px;height:35px;background:#fdd;z-index:10';
+          overlay.onclick=e=>e.stopPropagation();item.append(overlay);
+          item.onclick=()=>item.classList.add('selected');
+          document.getElementById('timeline').style.cssText='height:300px;overflow-y:auto';
+        }""")
+        port=LocalBrowser();port.page=self.page
+        self.assertEqual(await port.select_group({'title':SOURCE['title'],'dom_id':SOURCE['dom_id']}),SOURCE)
+
+    async def test_fallback_never_dismisses_verification_dialog(self):
+        await self.page.route('https://chat.zalo.me/**',lambda route:route.fulfill(status=200,content_type='text/html; charset=utf-8',body=HTML+'<div role="dialog">Confirm</div>'))
+        await self.page.goto('https://chat.zalo.me/')
+        port=LocalBrowser();port.page=self.page
+        with self.assertRaises(StopAutomation) as error:await port._click_group(SOURCE)
+        self.assertEqual(error.exception.code,'CHALLENGE_VISIBLE')
+        self.assertEqual(await self.page.locator('[role=dialog]').count(),1)

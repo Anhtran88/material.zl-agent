@@ -203,6 +203,7 @@ class LocalBrowser:
         import asyncio
         # Click the visible title, whose native event bubbles to React's item handler.
         # Large grid-item centres can fall under overlapping sidebar controls.
+        reason='GROUP_RENDERING'
         for attempt in range(3):
             url=urlsplit(self.page.url)
             if url.scheme!='https' or url.hostname!='chat.zalo.me' or url.port not in (None,443):
@@ -220,17 +221,56 @@ class LocalBrowser:
             if state not in {'READY','RENDERING'}:
                 raise StopAutomation('Không xác minh được nhóm trước khi bấm: '+state,code=state)
             if state=='READY':
-                target=self.page.locator('[data-id="div_TabMsg_ThrdChItem"][anim-data-id="'+source['dom_id']+'"] .conv-item .conv-item-title__name .truncate')
+                selector='[data-id="div_TabMsg_ThrdChItem"][anim-data-id="'+source['dom_id']+'"] .conv-item'
+                target=self.page.locator(selector+' .conv-item-title__name .truncate')
                 try:
                     if await target.count()>1:
                         raise StopAutomation('Tên nhóm không duy nhất.',code='GROUP_AMBIGUOUS')
-                    await target.scroll_into_view_if_needed(timeout=2000)
-                    await target.click(timeout=2500)
-                    return
+                    if await target.is_visible():
+                        await target.scroll_into_view_if_needed(timeout=1500)
+                        await target.click(timeout=1200)
+                        return
+                    reason='TITLE_HIDDEN'
                 except StopAutomation:raise
-                except Exception:pass
+                except Exception:reason='TITLE_NOT_ACTIONABLE'
+                # Responsive Zalo can hide/obscure the title while the conversation
+                # item remains actionable. Choose a proven unobstructed point in
+                # that same verified row, excluding menus/links/avatar controls.
+                row=self.page.locator(selector)
+                try:
+                    if await row.count()>1:raise StopAutomation('Hội thoại không duy nhất.',code='GROUP_AMBIGUOUS')
+                    await row.scroll_into_view_if_needed(timeout=1500)
+                    point=await self.page.evaluate(r"""source => {
+                      const norm=s=>s.normalize('NFC').replace(/\s+/gu,' ').trim();
+                      if([...document.querySelectorAll('[role="dialog"],input[type="password"],[id*="captcha" i],[class*="captcha" i],iframe[src*="captcha" i]')].some(n=>n.getClientRects().length))return {error:'CHALLENGE_VISIBLE'};
+                      const rows=[...document.querySelectorAll('[data-id="div_TabMsg_ThrdChItem"]')].filter(n=>norm(n.querySelector('.conv-item-title__name .truncate')?.textContent||'')===norm(source.title));
+                      if(rows.length>1)return {error:'GROUP_AMBIGUOUS'};
+                      if(!rows.length)return {state:'RENDERING'};
+                      if(rows[0].getAttribute('anim-data-id')!==source.dom_id)return {error:'GROUP_ID_CHANGED'};
+                      const item=rows[0].querySelector('.conv-item');if(!item)return {state:'RENDERING'};
+                      if(item.classList.contains('selected'))return {state:'SELECTED'};
+                      const rect=item.getBoundingClientRect();
+                      for(const [fx,fy] of [[.55,.72],[.7,.8],[.85,.75],[.5,.5],[.6,.3]]){
+                        const x=rect.left+rect.width*fx,y=rect.top+rect.height*fy;
+                        if(x<0||y<0||x>=innerWidth||y>=innerHeight)continue;
+                        const hit=document.elementFromPoint(x,y);
+                        if(!hit || hit.closest('.conv-item')!==item)continue;
+                        const control=hit.closest('button,a,input,select,[role="button"],.conv-item-title__more,.conv-item-avatar,.grd-ava');
+                        if(control && control!==item && control!==rows[0])continue;
+                        return {state:'READY',x:x-rect.left,y:y-rect.top};
+                      }
+                      return {state:'BLOCKED'};
+                    }""",source)
+                    if point.get('error'):raise StopAutomation('Không xác minh được vùng bấm: '+point['error'],code=point['error'])
+                    if point.get('state')=='SELECTED':return
+                    reason='ROW_OBSTRUCTED' if point.get('state')=='BLOCKED' else 'GROUP_RENDERING'
+                    if point.get('state')=='READY':
+                        await row.click(position={'x':point['x'],'y':point['y']},timeout=1500)
+                        return
+                except StopAutomation:raise
+                except Exception:reason='ROW_NOT_ACTIONABLE'
             await asyncio.sleep(0.3)
-        raise StopAutomation('Không bấm được tên nhóm sau 3 lần thử. Đóng bảng nổi che danh sách Zalo rồi kết nối lại.',code='GROUP_CLICK_FAILED')
+        raise StopAutomation('Không bấm được tên hoặc vùng hội thoại sau 3 lần thử ('+reason+'). Đóng bảng nổi che danh sách Zalo, mở rộng cửa sổ Zalo rồi kết nối lại.',code='GROUP_CLICK_FAILED')
 
     async def select_group(self, group):
         import asyncio

@@ -126,3 +126,6 @@ The prior “Chưa cài OCR” label mixed historical unsuccessful records with 
 
 ## Visible stop reason — 2026-10-12
 The connection line now refreshes from every live status poll, preventing a stale “Đã kết nối đọc nhóm” message after a background failure. Error code, failed stage and the existing safe diagnostic message are repeated in a visible alert directly beneath the primary controls, with reconnect action and a note that displayed counts belong to previous confirmed saves. This addresses visibility/state consistency; the underlying runtime failure must still be diagnosed from its actual code.
+
+## Responsive/obstructed group titles — 2026-10-12
+If the verified group title is hidden or not clickable, selection now scrolls its own conversation item into view and uses a native click at a browser-hit-tested point in that same item. The fallback excludes menus, links and avatar controls; it refuses verification dialogs, duplicate names or changed IDs. After either click method the existing two-consecutive source/window verification still runs before reads. Fully covered/unactionable rows remain a stop. GROUP_CLICK_FAILED now includes a safe fixed reason such as TITLE_NOT_ACTIONABLE, ROW_OBSTRUCTED or ROW_NOT_ACTIONABLE to distinguish rendering/geometry failures without exposing page contents.

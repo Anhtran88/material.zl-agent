@@ -39,3 +39,7 @@ Final full pinned-router suite after codec handling and summary-value UI asserti
 
 ## Stop-state visibility — 2026-10-12
 Four real-Chromium dashboard tests and the existing end-to-end Local UI test passed after moving safe failure details beside the primary controls. Added regression verifies stale connection text is replaced on asynchronous failure, error alert and code are visible, Play disables, previous saved counters remain and the alert clears after reconnect. Backend/monitor/storage code is unchanged; this does not claim to diagnose the user's screenshot without its omitted error code.
+
+## Responsive row selection fallback — 2026-10-12
+Added real Chromium regressions for a hidden title with an actionable conversation item, a title-only overlay with an uncovered same-row click point, and refusal to dismiss a verification dialog. Browser DOM suite passed 22 tests. The existing two-group continuous Play/cloud test now hides the second source title and supplies a real row hit area, exercising fallback selection through delayed React state transitions and separate source checkpoints. Full-suite result follows. This reproduces relevant layout failures without claiming live Windows inspection.
+Full pinned-router suite passed 174 tests in 53.553s. The two-source continuous Play test also passed with the second title hidden, native row selection, delayed group rendering, separate cloud captures/checkpoints and unchanged polling. No original Windows exception string or page contents are exposed by the fixed click-failure reason.
