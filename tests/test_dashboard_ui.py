@@ -120,3 +120,17 @@ class DashboardUITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('08:45',await self.page.locator('#captureImages .slip-summary').inner_text())
         self.assertEqual(await self.page.locator('#captureImages pre').count(),0)
         self.assertEqual(self.errors,[])
+
+    async def test_error_banner_updates_stale_connection_text(self):
+        from playwright.async_api import expect
+        failed={**self.status,'connected':False,'monitor_running':False,
+                'monitor':{'state':'PAUSED_ERROR','errorCode':'SOURCE_MISMATCH','failedStage':'SELECTING_GROUP','message':'Nhóm đang chọn khác nhóm được phép.'}}
+        await self.page.evaluate('s=>renderDashboard(s)',failed)
+        await expect(self.page.locator('#errorNotice')).to_be_visible()
+        await expect(self.page.locator('#errorNoticeText')).to_contain_text('SOURCE_MISMATCH')
+        await expect(self.page.locator('#state')).to_contain_text('Kết nối đọc đã dừng')
+        await expect(self.page.locator('#play')).to_be_disabled()
+        await expect(self.page.locator('#savedMessages')).to_have_text('2')
+        await self.page.evaluate('s=>renderDashboard(s)',self.status)
+        await expect(self.page.locator('#errorNotice')).not_to_be_visible()
+        await expect(self.page.locator('#state')).to_have_text('Đã kết nối đọc nhóm')

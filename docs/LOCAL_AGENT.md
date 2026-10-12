@@ -123,3 +123,6 @@ Manual acceptance steps:
 5. Switch groups or reconnect, then reopen a captured image with a cloud preview. Check the same photo and summary. New unchanged polling must not create another read snapshot.
 
 The prior “Chưa cài OCR” label mixed historical unsuccessful records with current successful ones. The UI now says the prior read reported a missing library; generic ImportError is classified as OCR_RUNTIME_ERROR rather than claiming the OCR package is absent. Run Start-LocalAgent.ps1/pip install -e . for an actual missing-package result, then reread. This change does not claim a diagnosed Windows runtime exception without its evidence.
+
+## Visible stop reason — 2026-10-12
+The connection line now refreshes from every live status poll, preventing a stale “Đã kết nối đọc nhóm” message after a background failure. Error code, failed stage and the existing safe diagnostic message are repeated in a visible alert directly beneath the primary controls, with reconnect action and a note that displayed counts belong to previous confirmed saves. This addresses visibility/state consistency; the underlying runtime failure must still be diagnosed from its actual code.
