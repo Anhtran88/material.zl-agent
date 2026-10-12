@@ -78,6 +78,16 @@
       "collectionGroup": "evidenceArtifacts",
       "fieldPath": "observedJson",
       "indexes": []
+    },
+    {
+      "collectionGroup": "imagePreviews",
+      "fieldPath": "jpegBase64",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "imagePreviewLinks",
+      "fieldPath": "previewJson",
+      "indexes": []
     }
   ]
 }

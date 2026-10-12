@@ -8,7 +8,7 @@ import re
 import unicodedata
 from datetime import date
 
-OCR_VERSION = 'm4-local-ocr-v1'
+OCR_VERSION = 'm4-slip-fields-preview-v2'
 MAX_IMAGES = 40
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 20_000_000
@@ -21,7 +21,7 @@ def normalize(text):
 
 def date_candidates(lines):
     """Only explicit confirmation/receipt labels; timestamps and issue dates remain unclassified."""
-    labels=re.compile(r'\bngay\s+(?:xac\s+nhan|giao\s+nhan|nhan\s+hang)\b')
+    labels=re.compile(r'\bngay\s*(?:xac\s*nhan|giao\s*nhan|nhan\s*hang)\b')
     dates=re.compile(r'(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})(?!\d)|\bngay\s+(\d{1,2})\s+thang\s+(\d{1,2})\s+nam\s+(\d{4})(?!\d)')
     out=[]
     for i,line in enumerate(lines):
@@ -37,7 +37,7 @@ def date_candidates(lines):
                 parts=match.groups();d,m,y=parts[:3] if parts[0] is not None else parts[3:]
                 try: value=date(int(y),int(m),int(d)).isoformat()
                 except ValueError: value=None
-                confidence=min(line['confidence'],lines[j]['confidence'])
+                confidence=min(float(line.get('confidence',0)),float(lines[j].get('confidence',0)))
                 out.append({'value':value,'displayDate':f'{int(d):02d}/{int(m):02d}/{int(y):04d}' if value else None,
                     'labelLine':i,'dateLine':j,'rawLabel':line['text'],'rawDateLine':lines[j]['text'],
                     'confidence':confidence,'status':'CANDIDATE_NEEDS_REVIEW' if value and confidence>=0.85 else 'UNREADABLE_OR_LOW_CONFIDENCE',
@@ -73,11 +73,12 @@ class LocalOCR:
             total+=len(text)
             lines.append({'text':str(text),'confidence':float(score),
                           'box':[[float(x),float(y)] for x,y in box]})
-        return {'lines':lines,'truncated':truncated,'confirmationDateCandidates':[] if truncated else date_candidates(lines),
-                'coordinateBasis':'resized_image_pixels','originalBytesVerified':False}
+        from .slip_fields import compact_ocr
+        return compact_ocr({'lines':lines,'truncated':truncated,
+                'coordinateBasis':'resized_image_pixels','originalBytesVerified':False})
 
 
-async def enrich_images(report, browser, ocr, previous=None):
+async def enrich_images(report, browser, ocr, previous=None, preview_store=None):
     out=copy.deepcopy(report)
     old={}
     if (previous or {}).get('imageExtraction',{}).get('rulesetVersion')==OCR_VERSION:
@@ -95,7 +96,10 @@ async def enrich_images(report, browser, ocr, previous=None):
                     image['ocr']={'status':'BATCH_LIMIT_NEEDS_REVIEW'};continue
                 json_bytes+=size
                 total_text+=sum(len(line['text']) for line in old[key].get('lines',[]))
-                image['ocr']=copy.deepcopy(old[key]);continue
+                image['ocr']=copy.deepcopy(old[key])
+                previous_image=next((i for a in (previous or {}).get('attachments',[]) for i in a.get('images',[]) if a['domContainerId']==attachment['domContainerId'] and i.get('domImageId')==image.get('domImageId')),None)
+                if previous_image and previous_image.get('preview'):image['preview']=copy.deepcopy(previous_image['preview'])
+                continue
             if not image.get('loaded'):
                 image['ocr']={'status':'IMAGE_NOT_LOADED'};continue
             if processed>=MAX_IMAGES or total_text>=100000:
@@ -106,6 +110,10 @@ async def enrich_images(report, browser, ocr, previous=None):
             data=await browser.image_bytes(attachment['domContainerId'],image.get('domImageId'))
             if data is None:
                 image['ocr']={'status':'IMAGE_UNAVAILABLE'};continue
+            if preview_store:
+                try:image['preview']=await preview_store.save(data,out['candidateSourceId'],attachment['domContainerId'],image['domImageId'])
+                except (ImportError,ModuleNotFoundError):image['previewStatus']='PREVIEW_CODEC_NOT_INSTALLED'
+                except (ValueError,OSError):image['previewStatus']='UNSUPPORTED_OR_TOO_LARGE'
             try:
                 result=await asyncio.to_thread(ocr.read,data)
                 total_text+=sum(len(line['text']) for line in result['lines'])
@@ -116,11 +124,12 @@ async def enrich_images(report, browser, ocr, previous=None):
                     image['ocr']={'status':'BATCH_LIMIT_NEEDS_REVIEW'}
                 else:
                     image['ocr']=observation;json_bytes+=size
-            except (ImportError,ModuleNotFoundError):
-                image['ocr']={'status':'OCR_NOT_INSTALLED'}
+            except (ImportError,ModuleNotFoundError) as exc:
+                missing=getattr(exc,'name',None)
+                image['ocr']={'status':'OCR_NOT_INSTALLED' if missing and missing.split('.')[0] in {'PIL','numpy','rapidocr_onnxruntime','onnxruntime','cv2'} else 'OCR_RUNTIME_ERROR'}
             except Exception:
                 image['ocr']={'status':'OCR_FAILED_NEEDS_REVIEW'}
             finally: del data
     out['imageExtraction']={'rulesetVersion':OCR_VERSION,'provider':'local_rapidocr',
-                            'processedImages':processed,'originalImagesStored':False,'sourceDataSentToAI':False}
+                            'processedImages':processed,'reviewPreviewsCloudEnabled':preview_store is not None,'originalImagesStored':False,'sourceDataSentToAI':False}
     return out

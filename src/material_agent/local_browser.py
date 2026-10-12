@@ -183,6 +183,22 @@ class LocalBrowser:
         except (ValueError,KeyError): return None
         return data if len(data)<=8*1024*1024 else None
 
+    async def find_image_bytes(self, container_id, image_id):
+        import asyncio
+        # Fixed bounded history navigation for a previously captured image identity.
+        data=await self.image_bytes(container_id,image_id)
+        if data is not None:return data
+        try:
+            for _ in range(60):
+                movement=await self.execute('scroll_previous')
+                await asyncio.sleep(0.35)
+                data=await self.image_bytes(container_id,image_id)
+                if data is not None:return data
+                if movement.get('atTop'):break
+            return None
+        finally:
+            await self.execute('scroll_latest')
+
     async def _click_group(self, source):
         import asyncio
         # Click the visible title, whose native event bubbles to React's item handler.

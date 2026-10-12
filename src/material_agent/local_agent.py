@@ -12,7 +12,7 @@ from importlib.resources import files
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field
 from .ai_gateway import GatewayConfig, GatewayService
@@ -20,6 +20,8 @@ from .bridge_credentials import write_connection
 from .bundle_engine import build_bundles, review_bundles, BundleInputError
 from .extraction import extract_report
 from .slip_ocr import LocalOCR, enrich_images, OCR_VERSION
+from .image_previews import FirestorePreviewStore
+from .slip_fields import compact_ocr
 from .firestore_capture import CloudStorageError
 from .recovery_store import RecoverableFirestoreStore
 from .local_browser import LocalBrowser, SOURCE
@@ -27,6 +29,13 @@ from .login import profile_path
 from .group_registry import GroupRegistry,defaults
 from .models import StopAutomation
 from .router_runtime import RouterRuntime
+
+
+class ImageViewRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    sourceId:str=Field(min_length=1,max_length=100)
+    domContainerId:str=Field(min_length=1,max_length=500)
+    domImageId:str=Field(min_length=1,max_length=500)
 
 
 class GroupSettings(BaseModel):
@@ -75,6 +84,7 @@ class Controller:
         self.audit_events=deque(maxlen=200)
         self.capture_store=capture_store or RecoverableFirestoreStore()
         self.base_capture_store=self.capture_store
+        self.preview_store=FirestorePreviewStore(self.capture_store.transport) if isinstance(self.capture_store,RecoverableFirestoreStore) else None
         self.registry=GroupRegistry(self.capture_store) if isinstance(self.capture_store,RecoverableFirestoreStore) else None
         self.groups=defaults()
         self.multi_enabled=False
@@ -147,7 +157,14 @@ class Controller:
         for report in self.group_reports.values():
             source=report.get('candidateSourceId')
             for name,target in [('messages',messages),('attachments',attachments)]:
-                for item in report.get(name,[]): target[(source,item['domContainerId'])]=item
+                for item in report.get(name,[]):
+                    if name=='attachments':
+                        import copy
+                        item=copy.deepcopy(item);item['sourceId']=source
+                        for image in item.get('images',[]):
+                            if image.get('ocr',{}).get('status')=='READ' and 'fields' not in image['ocr']:
+                                image['ocr']=compact_ocr(image['ocr'])
+                    target[(source,item['domContainerId'])]=item
         rows=[]
         for report in self.group_reports.values():
             rows.extend((report.get('extraction') or extract_report(report))['rows'])
@@ -177,7 +194,7 @@ class Controller:
             for item in report.get(field,[]):
                 value={k:v for k,v in item.items() if k!='renderedOrder'}
                 if field=='attachments':
-                    value['images']=[{k:v for k,v in image.items() if k!='ocr'} for image in value.get('images',[])]
+                    value['images']=[{k:v for k,v in image.items() if k not in {'ocr','preview','previewStatus'}} for image in value.get('images',[])]
                 records[(field,item['domContainerId'])]=json.dumps(value,sort_keys=True,ensure_ascii=False)
         return records
 
@@ -207,7 +224,7 @@ class Controller:
                 self.stage('BUNDLING','Đang tạo đề xuất bundle từ nội dung mới…')
                 report={**report,'bundleEngine':build_bundles(report,allowed_source=self.active_source)}
                 self.stage('READING_SLIPS','Đang đọc ảnh phiếu bằng OCR trên máy…')
-                report=await enrich_images(report,self.browser,self.ocr,self.bundle_report)
+                report=await enrich_images(report,self.browser,self.ocr,self.bundle_report,self.preview_store)
                 await self.browser.execute('verify')
                 report['extraction']=extract_report(report)
                 self.stage('SAVING','Đang lưu dữ liệu Zalo lên Firestore…')
@@ -335,7 +352,7 @@ class Controller:
                 result=await self.browser.execute(operation)
                 if operation=='read_visible':
                     result={**result,'bundleEngine':build_bundles(result,allowed_source=self.active_source)}
-                    result=await enrich_images(result,self.browser,self.ocr)
+                    result=await enrich_images(result,self.browser,self.ocr,preview_store=self.preview_store)
                     await self.browser.execute('verify')
                     result['extraction']=extract_report(result)
                 receipt=await self.capture_store.save(result,operation=operation,session_id=self.session_id)
@@ -399,7 +416,7 @@ def create_app(token, controller=None, port=8765, clock=None):
         response=await call_next(request)
         response.headers.update({'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
                                  'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
-                                 'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"})
+                                 'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"})
         return response
 
     def local_only(request):
@@ -479,6 +496,42 @@ def create_app(token, controller=None, port=8765, clock=None):
         async with controller.lock:
             return {**(controller.saved_report or {}),'aggregate':controller.combined_report(),'cloudStorage':controller.saved_receipt,
                     'monitor':controller.monitor_state}
+
+    @app.post('/api/local/images/view')
+    async def view_image(request:Request, body:ImageViewRequest):
+        local_only(request)
+        report=controller.group_reports.get(body.sourceId)
+        if not report:raise HTTPException(404,'Ảnh không thuộc bản dữ liệu đã khôi phục.')
+        attachment=next((a for a in report.get('attachments',[]) if a['domContainerId']==body.domContainerId),None)
+        image=next((i for i in (attachment or {}).get('images',[]) if i.get('domImageId')==body.domImageId),None)
+        if not image:raise HTTPException(404,'Ảnh không thuộc bản dữ liệu đã khôi phục.')
+        if not controller.preview_store:raise HTTPException(409,'Chưa có bộ lưu ảnh xem trước trên Firestore.')
+        paused=False
+        try:
+            reference=image.get('preview') or await controller.preview_store.reference(body.sourceId,body.domContainerId,body.domImageId)
+            if not reference:
+                if not controller.status()['connected']:raise HTTPException(409,'Kết nối lại Zalo để lấy ảnh của bản đọc cũ.')
+                await controller.pause();paused=True
+                async with controller.lock:
+                    original=dict(controller.browser.source)
+                    target={'title':report['sourceTitle'],'dom_id':body.sourceId}
+                    try:
+                        if original!=target:await controller.browser.select_group(target)
+                        data=await controller.browser.find_image_bytes(body.domContainerId,body.domImageId)
+                        if data is None:raise HTTPException(409,'Không tìm thấy ảnh trong lịch sử đang tải. Ảnh chưa có bản xem trước trên cloud.')
+                        reference=await controller.preview_store.save(data,body.sourceId,body.domContainerId,body.domImageId)
+                        del data
+                    finally:
+                        if controller.browser.source!=original:
+                            try:await controller.browser.select_group(original)
+                            except StopAutomation:
+                                controller.enabled=False
+                                raise
+            content=await controller.preview_store.read(reference,body.sourceId,body.domContainerId,body.domImageId)
+            return Response(content,media_type='image/jpeg',headers={'X-Monitor-Paused':'true' if paused else 'false'})
+        except CloudStorageError as exc:raise HTTPException(503,'Không tải được ảnh từ Firestore: '+exc.code) from None
+        except (ImportError,ModuleNotFoundError):raise HTTPException(409,'Cần cài lại các thư viện ảnh: chạy Start-LocalAgent.ps1.') from None
+        except (ValueError,OSError):raise HTTPException(409,'Ảnh không hỗ trợ hoặc vượt giới hạn xem trước.') from None
 
     @app.post('/api/local/monitor/play')
     async def monitor_play(request:Request):

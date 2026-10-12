@@ -155,3 +155,17 @@ class OCRBudgetTests(unittest.IsolatedAsyncioTestCase):
         cached=await enrich_images(raw,Browser(),OCR(),enriched)
         self.assertLessEqual(sum(len(json.dumps(a['images'][0]['ocr'],ensure_ascii=False).encode()) for a in cached['attachments'] if a['images'][0]['ocr']['status']=='READ'),MAX_OCR_JSON_BYTES)
         self.assertEqual(len(cached['attachments']),len(raw['attachments']))
+
+class OCRClassificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_dependency_is_distinct_from_runtime_import_error(self):
+        class Browser:
+            async def image_bytes(self,*args):return b'fixture'
+        class Missing:
+            def read(self,data):raise ModuleNotFoundError(name='rapidocr_onnxruntime')
+        class Runtime:
+            def read(self,data):raise ImportError('private runtime details')
+        raw=report([('image','a')]);raw['attachments'][0]['images'][0]['loaded']=True
+        absent=await enrich_images(raw,Browser(),Missing())
+        broken=await enrich_images(raw,Browser(),Runtime())
+        self.assertEqual(absent['attachments'][0]['images'][0]['ocr']['status'],'OCR_NOT_INSTALLED')
+        self.assertEqual(broken['attachments'][0]['images'][0]['ocr']['status'],'OCR_RUNTIME_ERROR')

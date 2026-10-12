@@ -28,15 +28,24 @@ class DashboardUITests(unittest.IsolatedAsyncioTestCase):
         image={'domContainerId':candidate['domContainerId'],'images':[{'domImageId':'fixture-image','width':800,'height':1200,'loaded':True,
                'ocr':{'status':'READ','confirmationDateCandidates':[candidate],
                       'lines':[{'text':'Ngày xác nhận: 12/10/2026 08:45 <script>unsafe()</script>'}]}}]}
+        from material_agent.slip_fields import compact_ocr
+        image['images'][0]['ocr']=compact_ocr({'status':'READ','truncated':False,'lines':[
+            {'text':text,'confidence':.98} for text in ['Ngày xác nhận: 12/10/2026 08:45',
+                'Vật tư: Cát xây','KL đề nghị: 10m3','KL nhận thực tế: 9,5m3','Dự án: Sunflower 1','Người nhận: Nguyễn Văn A']]})
         self.result={'aggregate':{'messages':one['messages']+two['messages'],'attachments':[image],'extraction':{'rows':rows}}}
         self.status={'connected':True,'monitor_running':False,'monitor':{'state':'PAUSED'},
                      'dashboard':{'revision':1,'sourceTitle':SOURCE['title'],'stats':{},'activity':[],
                      'savedCapture':{'confirmed':True,'messages':2,'imageReferences':1,'ocrImagesRead':1,'slipDateCandidateCount':1,
                      'documentPath':'tenants/default/captures/UI_FIXTURE_ONLY','commitTime':'2026-10-12T01:00:00Z'}}}
         html=Path('src/material_agent/local_ui.html').read_text()
+        from test_slip_ocr import fixture_image
+        from material_agent.image_previews import rendition
+        self.preview_jpeg=rendition(fixture_image())[0]
         async def route(request):
             path=request.request.url.split('8765',1)[1].split('#',1)[0]
             if path=='/': await request.fulfill(status=200,content_type='text/html; charset=utf-8',body=html);return
+            if path=='/api/local/images/view':
+                await request.fulfill(status=200,content_type='image/jpeg',body=self.preview_jpeg);return
             data={'configured':False}
             if path=='/api/status':data=self.status
             elif path=='/api/monitor/result':data=self.result
@@ -87,4 +96,27 @@ class DashboardUITests(unittest.IsolatedAsyncioTestCase):
         await self.page.evaluate('s=>renderDashboard(s)',self.status)
         await expect(self.page.locator('#play')).to_be_disabled()
         await expect(self.page.locator('#runBadge')).to_contain_text('Chưa kết nối')
+        self.assertEqual(self.errors,[])
+
+    async def test_image_viewer_zoom_fit_close_and_concise_fields(self):
+        from playwright.async_api import expect
+        await self.page.locator('#captureImages .source-button').click()
+        await expect(self.page.locator('#imageDialog')).to_be_visible()
+        await expect(self.page.locator('#reviewImage')).to_be_visible()
+        width=await self.page.locator('#reviewImage').evaluate('n=>n.width')
+        await self.page.locator('#zoomIn').click()
+        await expect(self.page.locator('#zoomLabel')).to_have_text('125%')
+        self.assertGreater(await self.page.locator('#reviewImage').evaluate('n=>n.width'),width)
+        await self.page.locator('#fitImage').click()
+        await expect(self.page.locator('#zoomLabel')).to_have_text('100%')
+        await self.page.keyboard.press('Escape')
+        await expect(self.page.locator('#imageDialog')).not_to_be_visible()
+        self.assertIsNone(await self.page.locator('#reviewImage').get_attribute('src'))
+        await expect(self.page.locator('#captureImages .slip-summary')).to_contain_text('KL đề nghị')
+        await expect(self.page.locator('#captureImages .slip-summary')).to_contain_text('KL thực nhận')
+        await expect(self.page.locator('#captureImages .slip-summary')).to_contain_text('10 m3')
+        await expect(self.page.locator('#captureImages .slip-summary')).to_contain_text('9.5 m3')
+        await expect(self.page.locator('#captureImages .slip-summary')).to_contain_text('Nguyễn Văn A')
+        self.assertNotIn('08:45',await self.page.locator('#captureImages .slip-summary').inner_text())
+        self.assertEqual(await self.page.locator('#captureImages pre').count(),0)
         self.assertEqual(self.errors,[])

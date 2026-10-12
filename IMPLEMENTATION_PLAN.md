@@ -71,3 +71,6 @@ User confirmed multi-group Play success. M4 begins with evidence-backed message 
 
 ## M4 photo OCR phase — 2026-10-12
 Fixed browser blob acquisition and local in-memory OCR now enrich new captures automatically; dates have explicit-label evidence and remain candidates until association/date validation. Shared dashboard exposes OCR counts and proposed dates. Software dependencies install via Start-LocalAgent.ps1. No provider data transmission or local image/report files. Actual Windows receipt accuracy and PDF/Word/Excel integration remain within M4 acceptance; M5 remains blocked by that gate. See docs/MILESTONE_4_REPORT.md for precise limits.
+
+## M4 review refinement — 2026-10-12
+User requested image zoom and only essential slip fields. Added cloud-only review renditions, a scoped image modal, concise field/role extraction and evidence-line compaction. The current observation window upgrades to m4-slip-fields-preview-v2; old immutable snapshots are not silently rewritten. Operator acceptance is to compare all six fields with clear actual slips, verify unknown/contract handling, zoom and reopen cloud previews after group changes. OCR confidence and candidate linkage still do not finalize delivery or accounting. PDF/Word/Excel integration and representative handwritten/table accuracy remain pending before full M4 acceptance.
